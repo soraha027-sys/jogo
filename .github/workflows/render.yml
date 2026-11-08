@@ -58,7 +58,10 @@ jobs:
   juntar:
     needs: render
     runs-on: ubuntu-latest
+    permissions: {contents: write}
     steps:
+      - uses: actions/checkout@v4
+        with: {ref: editor}
       - uses: actions/download-artifact@v4
         with: {pattern: "parte-*", merge-multiple: true}
       - run: |
@@ -67,3 +70,13 @@ jobs:
           ffmpeg -loglevel error -f concat -safe 0 -i l.txt -c copy video_final.mp4
       - uses: actions/upload-artifact@v4
         with: {name: VIDEO_FINAL, path: video_final.mp4}
+      - name: Salva o MP4 no branch videos
+        run: |
+          git config user.name render-bot; git config user.email render-bot@users.noreply.github.com
+          cp video_final.mp4 /tmp/v.mp4
+          git fetch origin videos || true
+          git checkout videos 2>/dev/null || git checkout --orphan videos
+          git rm -rqf --cached . 2>/dev/null || true
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          mkdir -p out; cp /tmp/v.mp4 out/$CENA.mp4
+          git add out/$CENA.mp4 && git commit -qm "render $CENA" && git push -q origin videos
