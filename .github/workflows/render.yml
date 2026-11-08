@@ -1,0 +1,67 @@
+name: render
+on:
+  workflow_dispatch:
+    inputs:
+      cena: {description: "nome da cena (arquivo em cenas/, sem .jsx)", default: "cena1"}
+      partes: {description: "quantas maquinas em paralelo", default: "8"}
+  push:
+    branches: [editor]
+    paths: ["cenas/**"]
+env:
+  CENA: ${{ github.event.inputs.cena || 'cena1' }}
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+      frames: ${{ steps.m.outputs.frames }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: EffectCraft (release pronta ou compila)
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: |
+          mkdir -p bin
+          if gh release download -R storytold/effectcraft -p '*linux*x86_64*.tar.gz' -D dl 2>/dev/null; then
+            tar xzf dl/*.tar.gz -C dl && find dl -name effectcraft-cli -type f -exec cp {} bin/ \;
+          fi
+          if [ ! -x bin/effectcraft-cli ]; then
+            git clone --depth 1 https://github.com/storytold/effectcraft ec && (cd ec && cargo build --release -p effectcraft-cli) && cp ec/target/release/effectcraft-cli bin/
+          fi
+          chmod +x bin/effectcraft-cli
+      - name: Projeto
+        run: |
+          sed "s#__OUT__#$PWD/projeto.ecproj#" cenas/$CENA.jsx > run.jsx
+          EFFECTCRAFT_FONT_DIRS=$PWD/fonts bin/effectcraft-cli script run.jsx
+      - id: m
+        run: |
+          D=$(bin/effectcraft-cli info projeto.ecproj --json | python3 -c "import json,sys;print(json.load(sys.stdin)['activeComp']['duration'])")
+          N=${{ github.event.inputs.partes || '8' }}
+          python3 -c "import json,math;n=$N;F=int(round($D*60));s=math.ceil(F/n);print('matrix='+json.dumps([{'i':i,'a':i*s,'b':min(F,(i+1)*s)} for i in range(n) if i*s<F]));print('frames=%d'%F)" >> $GITHUB_OUTPUT
+      - uses: actions/upload-artifact@v4
+        with: {name: base, path: "bin/\nprojeto.ecproj\nfonts/"}
+  render:
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: {parte: "${{ fromJson(needs.setup.outputs.matrix) }}"}
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {name: base}
+      - run: |
+          chmod +x bin/effectcraft-cli; mkdir -p out
+          S=$(python3 -c "print(${{ matrix.parte.a }}/60)"); E=$(python3 -c "print(${{ matrix.parte.b }}/60)")
+          EFFECTCRAFT_FONT_DIRS=$PWD/fonts EFFECTCRAFT_CPU_INFLIGHT=2 bin/effectcraft-cli render projeto.ecproj --comp Main --out out/f.png --format png --start $S --end $E
+          ffmpeg -loglevel error -framerate 60 -pattern_type glob -i 'out/*.png' -c:v libx264 -preset slow -crf 15 -pix_fmt yuv420p parte_$(printf %03d ${{ matrix.parte.i }}).mp4
+      - uses: actions/upload-artifact@v4
+        with: {name: "parte-${{ matrix.parte.i }}", path: "parte_*.mp4"}
+  juntar:
+    needs: render
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: {pattern: "parte-*", merge-multiple: true}
+      - run: |
+          ls parte_*.mp4 | sort | sed "s/^/file '/;s/$/'/" > l.txt
+          ffmpeg -loglevel error -f concat -safe 0 -i l.txt -c copy video_final.mp4
+      - uses: actions/upload-artifact@v4
+        with: {name: VIDEO_FINAL, path: video_final.mp4}
