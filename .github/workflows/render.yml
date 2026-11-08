@@ -48,6 +48,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with: {name: base}
       - run: |
+          sudo apt-get -qq update && sudo apt-get -qq install -y ffmpeg >/dev/null
           chmod +x bin/effectcraft-cli; mkdir -p out
           S=$(python3 -c "print(${{ matrix.parte.a }}/60)"); E=$(python3 -c "print(${{ matrix.parte.b }}/60)")
           EFFECTCRAFT_FONT_DIRS=$PWD/fonts EFFECTCRAFT_CPU_INFLIGHT=2 bin/effectcraft-cli render projeto.ecproj --comp Main --out out/f.png --format png --start $S --end $E
@@ -61,6 +62,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with: {pattern: "parte-*", merge-multiple: true}
       - run: |
+          sudo apt-get -qq update && sudo apt-get -qq install -y ffmpeg >/dev/null
           ls parte_*.mp4 | sort | sed "s/^/file '/;s/$/'/" > l.txt
           ffmpeg -loglevel error -f concat -safe 0 -i l.txt -c copy video_final.mp4
       - uses: actions/upload-artifact@v4
