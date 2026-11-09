@@ -81,7 +81,7 @@ const STEAM: Matter = {
   ...SMOKE,
   gravity: -0.8,
   drag: 1.4,
-  size: 0.55,
+  size: 0.34,
   life: 1.8,
   colors: [new Color(0xf2f6fa), new Color(0xdfe7ee), new Color(0xffffff)],
 };
@@ -327,7 +327,7 @@ export class SpellSystem {
           rnd() * 0.4,
           0.4,
           rnd() * 0.4,
-          1.6,
+          1.1,
           1,
         );
       }

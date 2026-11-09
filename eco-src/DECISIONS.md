@@ -39,3 +39,15 @@
 - D30 Magia na rede = só as palavras já decodificadas + potência + origem + mira. Cada cliente recalcula a magia pela mesma lógica e valida tudo que chega (raiz/prefixo/terminação têm que existir na língua).
 - D31 Anfitrião = menor id da sala, sem troca de mensagem; se ele sai, o próximo assume sozinho. Hoje ele não decide nada (não há estado compartilhado ainda); fica pronto pra quando houver inimigos/objetos.
 - D32 Voz por proximidade fica pra depois: no Android o Chrome não divide o microfone entre o reconhecimento de feitiço e uma chamada.
+
+## Fala com sentido (09/11)
+- D33 Medido com as 20 mil palavras mais comuns do português (wordfreq): antes, 40% das frases comuns de um teste viravam magia. Regras de forma: a 1ª palavra precisa de terminação; pelo menos 3 peças (prefixo/raiz/terminação), ou raiz + `-us`; no máximo 1 som sobrando; tolerância por peça menor; "eco torto" só quando UMA peça escorregou. Resultado: 0,85% das palavras e 0,14% dos pares.
+- D34 Microfone padrão = segurar pra falar (botão do mic, Q, X do controle). Toque rápido / M = sempre aberto, que ainda ignora as 166 palavras comuns de `comuns.json` (geradas da lista de frequência).
+- D35 Magia de 2 peças só com `-us` (`pirus`, `ventus`). `piror`, `lava`, `terum` não valem mais; vira `mapiror`, `malava`, `materum` etc.
+
+## Poderes (09/11)
+- D36 Cada raiz tem verbos (`lingua.json` → `verbs`): pir queima, vent empurra/levanta, gel esfria, lav molha, ter dano bruto/atordoa/sólido, kor puxa/rouba mana. `la-` troca pelo oposto. Opostos se anulam sem `ko-`; com `ko-` ficam os dois, e calor + frio/água explode em vapor.
+- D37 Estados: queimando, molhado, frio (3 = congela), congelado, tonto. Reações saem do encontro dos estados, venham de quem vierem.
+- D38 Formas: -or um alvo em cheio (kor puxa pra quem lançou) · -us funil que puxa e ergue · -a onda que empurra cada um uma vez · -um brota e lança pra cima; sólido (pedra/gelo) vira coluna com colisão por 7 s · -ar jato, vento dá coice em quem lança · -ia chuva com atraso.
+- D39 Zonas no chão: poça, gelo, fogo, vapor. Frio na poça = gelo, fogo na poça = vapor, fogo no gelo = poça. Poça e gelo fazem escorregar.
+- D40 Bonecos: 120 de vida, física, quebram e voltam em 3 s. Cada cliente simula os próprios (não sincroniza) — ok pra treino.
