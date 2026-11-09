@@ -52,10 +52,15 @@ h1 { margin: 0 0 4px; font: 700 15px/1.1 var(--font-display); letter-spacing: 0.
 #jump { pointer-events: auto; width: 92px; height: 92px; border-radius: 50%; background: var(--accent); color: #fff; font: 700 14px var(--font-display); letter-spacing: 0.06em; text-transform: uppercase; border: 2px solid var(--fg); touch-action: none; cursor: pointer; }
 #jump:active { transform: scale(0.94); }
 #toast { position: fixed; top: 40%; left: 50%; transform: translate(-50%, -50%); font: 700 20px var(--font-display); text-transform: uppercase; letter-spacing: 0.08em; opacity: 0; transition: opacity 0.25s; pointer-events: none; text-shadow: 0 2px 10px rgba(0,0,0,0.6); }
-#spl{width:210px;flex-direction:column;gap:5px;padding:8px}
-#spl:not([hidden]){display:flex}
-#spl .btn{text-align:left;font-size:11px;padding:6px 8px}
-#spl p{margin:0 0 2px;font-size:11px;color:var(--muted)}
+.ibtn{pointer-events:auto;width:52px;height:52px;border-radius:50%;background:var(--panel);border:1px solid var(--panel-line);color:var(--fg);display:grid;place-items:center;padding:0;cursor:pointer;transition:background .2s}
+.ibtn svg{width:24px;height:24px}
+#mic[aria-pressed="true"]{background:var(--led);color:#0d1b22;border-color:var(--led)}
+#mic .slash{stroke:#ff5a5a}
+#mic[aria-pressed="true"] .slash{display:none}
+#land{position:fixed;right:max(30px,env(safe-area-inset-right,0px));bottom:calc(env(safe-area-inset-bottom,0px) + 128px);width:60px;height:60px}
+#land[hidden]{display:none}
+#said{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 168px);max-width:70vw;padding:8px 14px;border-radius:12px;background:var(--panel);border:1px solid var(--panel-line);font:700 16px var(--font-body);text-align:center;pointer-events:none;opacity:0;transition:opacity .3s}
+#said i{font-style:normal;color:var(--muted);font-weight:400}
 @media (prefers-reduced-motion: reduce) { .hint, #toast { transition: none; } }
 </style>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=Nunito+Sans:wght@400;700&display=swap">
@@ -70,13 +75,14 @@ h1 { margin: 0 0 4px; font: 700 15px/1.1 var(--font-display); letter-spacing: 0.
   <div class="tools">
     <div class="swatches" id="swatches" role="group" aria-label="Cor do corpo"></div>
     <button class="btn" id="reset" type="button">Reiniciar</button>
-    <button class="btn" id="spb" type="button" aria-pressed="false">🧹 Feitiço</button>
-    <div class="card" id="spl" hidden></div>
+    <button class="ibtn" id="mic" type="button" aria-pressed="false" aria-label="Microfone"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><line class="slash" x1="4" y1="3" x2="20" y2="21"/></svg></button>
   </div>
 </div>
 
-<div class="hint" id="hint">Arraste a tela para girar a câmera. Pulo duplo faz flip. Abra 🧹 Feitiço e teste a vassoura. O cânion ao norte sobe até o planalto.</div>
+<div class="hint" id="hint">Arraste a tela para girar a câmera. Pulo duplo faz flip. Ligue o 🎤 e fale “ventu rakaê volis” pra chamar a vassoura. Fale “pousar” pra descer.</div>
 <div id="toast"></div>
+<div id="said" aria-live="polite"></div>
+<button class="ibtn" id="land" type="button" aria-label="Pousar" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v13M6 12l6 6 6-6M5 21h14"/></svg></button>
 
 <div class="ui bottom">
   <div id="stick" aria-label="Joystick"><div id="knob"></div></div>
@@ -566,7 +572,7 @@ h1 { margin: 0 0 4px; font: 700 15px/1.1 var(--font-display); letter-spacing: 0.
     tumble(10); P.vy = 28; P.vx = (Math.random() - 0.5) * 40; P.vz = (Math.random() - 0.5) * 40;
   }
   function bTick(dt) {
-    var s = bf.st; bf.speak -= dt; readMic(); mapTick(dt);
+    var s = bf.st; bf.speak -= dt; readMic(); mapTick(dt); micTick(dt);
     if (s === "off") { bf.sp = 1; return; }
     bf.t += dt; bf.sc += (1 - bf.sc) * Math.min(1, 8 * dt);
     if (s !== "dis") bg.scale.setScalar(Math.max(0.01, bf.sc) * BS);
@@ -610,20 +616,53 @@ h1 { margin: 0 0 4px; font: 700 15px/1.1 var(--font-display); letter-spacing: 0.
     if (sim >= 0.8) k = bf.pk < 0.05 ? "fraco" : "ok"; else if (w < 3 && sim > 0.4) k = "faltou"; else if (sim >= 0.55) k = "torto"; else if (sim >= 0.3) k = "explode";
     bf.pk = 0; if (k) cast(k); else toast("Não entendi. Fale de novo", "#fff");
   }
-  var spb = document.getElementById("spb"), spl = document.getElementById("spl");
-  spl.innerHTML = "<p>Fale “VENTU RAKAÊ VOLIS” ou simule a fala:</p>";
-  function sbtn(txt, fn) { var b = document.createElement("button"); b.className = "btn"; b.type = "button"; b.textContent = txt; b.addEventListener("click", fn); spl.appendChild(b); return b; }
-  [["✨ Certo", "ok"], ["✂️ Faltou sílaba", "faltou"], ["🔀 Palavra trocada", "torto"], ["💨 Sem força", "fraco"], ["💥 Tudo errado", "explode"]].forEach(function (x) { sbtn(x[0], function () { cast(x[1]); }); });
-  sbtn("⬇ Pousar", function () { if (bf.st === "fly") { bf.st = "land"; bf.t = 0; } });
-  sbtn("🎤 Voz real", function () {
-    var b = this, SR = window.SpeechRecognition || window.webkitSpeechRecognition; if (an) return;
+  // microfone: liga/desliga durante o jogo, transcrição ao vivo na tela
+  var micBtn = document.getElementById("mic"), landBtn = document.getElementById("land"), said = document.getElementById("said");
+  var micOn = false, micStream = null, micCtx = null, saidT = 0;
+  function showSaid(fin, tmp) {
+    said.innerHTML = ""; if (fin) said.appendChild(document.createTextNode(fin + " "));
+    if (tmp) { var it = document.createElement("i"); it.textContent = tmp; said.appendChild(it); }
+    said.style.opacity = fin || tmp ? 1 : 0; saidT = 2.5;
+  }
+  function land() { if (bf.st === "fly") { bf.st = "land"; bf.t = 0; } }
+  function hear(txt) { if (/\bpous/.test(norm(txt))) { land(); return; } judge(txt); }
+  function micStop() {
+    micOn = false; micBtn.setAttribute("aria-pressed", "false"); micBtn.style.boxShadow = "";
+    if (rec) { try { rec.abort(); } catch (x) {} rec = null; }
+    if (micStream) micStream.getTracks().forEach(function (t) { t.stop(); });
+    if (micCtx) micCtx.close(); micStream = micCtx = an = null; bf.mic = 0; showSaid("", "");
+  }
+  function micStart() {
+    var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast("Microfone indisponível aqui", "#ff8a5a"); return; }
     navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stm) {
-      var ac = new (window.AudioContext || window.webkitAudioContext)(); an = ac.createAnalyser(); an.fftSize = 512; abuf = new Uint8Array(an.fftSize); ac.createMediaStreamSource(stm).connect(an);
-      b.setAttribute("aria-pressed", "true"); toast("Microfone ligado", "#50ffdc");
-      if (SR) { rec = new SR(); rec.lang = "pt-BR"; rec.continuous = true; rec.onresult = function (e) { judge(e.results[e.results.length - 1][0].transcript); }; rec.onend = function () { try { rec.start(); } catch (x) {} }; try { rec.start(); } catch (x) {} }
-    }).catch(function () { toast("Microfone indisponível aqui. Use os botões", "#ff8a5a"); });
+      micStream = stm; micOn = true; micBtn.setAttribute("aria-pressed", "true");
+      micCtx = new (window.AudioContext || window.webkitAudioContext)(); an = micCtx.createAnalyser(); an.fftSize = 512; abuf = new Uint8Array(an.fftSize); micCtx.createMediaStreamSource(stm).connect(an);
+      if (!SR) { toast("Este navegador não reconhece fala. Use o Chrome", "#ff8a5a"); return; }
+      rec = new SR(); rec.lang = "pt-BR"; rec.continuous = true; rec.interimResults = true;
+      rec.onresult = function (e) {
+        var fin = "", tmp = "";
+        for (var i = e.resultIndex; i < e.results.length; i++) { var t = e.results[i][0].transcript; if (e.results[i].isFinal) fin += t; else tmp += t; }
+        showSaid(fin.trim(), tmp.trim());
+        if (fin.trim()) hear(fin);
+      };
+      rec.onerror = function (e) { if (e.error === "not-allowed") { toast("Permissão do microfone negada", "#ff8a5a"); micStop(); } };
+      rec.onend = function () { if (micOn && rec) try { rec.start(); } catch (x) {} };
+      try { rec.start(); } catch (x) {}
+    }).catch(function () { toast("Microfone indisponível aqui", "#ff8a5a"); });
+  }
+  micBtn.addEventListener("click", function () { if (micOn) micStop(); else micStart(); });
+  landBtn.addEventListener("click", land);
+  // atalhos de teste no teclado: M liga/desliga o mic · 1 a 5 simulam a fala
+  window.addEventListener("keydown", function (e) {
+    var k = e.key.toLowerCase(), sim = { "1": "ok", "2": "faltou", "3": "torto", "4": "fraco", "5": "explode" };
+    if (k === "m") micBtn.click(); else if (sim[k]) cast(sim[k]);
   });
-  spb.addEventListener("click", function () { spl.hidden = !spl.hidden; spb.setAttribute("aria-pressed", spl.hidden ? "false" : "true"); });
+  function micTick(dt) {
+    landBtn.hidden = bf.st !== "fly";
+    if (micOn) micBtn.style.boxShadow = "0 0 0 " + Math.min(10, bf.mic * 60).toFixed(1) + "px rgba(80,255,220,0.35)";
+    if (saidT > 0) { saidT -= dt; if (saidT <= 0) said.style.opacity = 0; }
+  }
 
 
   /* ---------- MAPA: vale low poly (estilo das referências) ----------
