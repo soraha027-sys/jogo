@@ -101,7 +101,9 @@ describe('só encantamento vira magia', () => {
     expect(magic('pirigelor')).toBe(true);
   });
   it('microfone aberto ignora palavras comuns que soam como magia; segurando, valem', () => {
-    expect(magic('ventos', true)).toBe(false);
+    expect(magic('pires')).toBe(true);
+    expect(magic('ventos', true)).toBe(true); // raiz + -us limpa é magia curta de verdade
+    expect(magic('carros', true)).toBe(false);
     expect(magic('ventos', false)).toBe(true);
     expect(magic('matéria', true)).toBe(false);
   });

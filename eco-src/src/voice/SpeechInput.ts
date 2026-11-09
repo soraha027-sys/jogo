@@ -80,6 +80,8 @@ export class SpeechInput {
 
   start(): void {
     this.wanted = true;
+    // ainda terminando a anterior (resultado final a caminho): reabre sozinho no onend
+    if (this.rec) return;
     this.open();
   }
 

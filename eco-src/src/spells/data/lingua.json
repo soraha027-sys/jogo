@@ -80,7 +80,8 @@
     "us": {
       "shape": "vortex",
       "gloss": "vórtice",
-      "cost": 16
+      "cost": 16,
+      "alt": ["is"]
     },
     "or": {
       "shape": "projectile",

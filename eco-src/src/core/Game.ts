@@ -149,7 +149,7 @@ export async function createGame(
     };
     diag = `ouviu "${cast.heard}"\n/${cast.phonemes}/ → ${plan?.parts ?? '—'}  custo ${cast.cost.toFixed(2)}`;
     if (!plan || cast.echo === 'sem_eco') {
-      view.why = 'Isso não é a língua do Eco.';
+      view.why = `Ouvi “${cast.heard}”. ${cast.why || 'Isso não é a língua do Eco.'}`;
       witch.trigger('shrug');
       spells.smoke(witch.handPosition(new Vector3()), 6, 1.5);
       return spellHud.showCast(view);

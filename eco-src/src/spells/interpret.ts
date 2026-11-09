@@ -25,6 +25,8 @@ export type Cast =
       heard: string;
       phonemes: string;
       cost: number;
+      /** Por que não virou magia (vazio quando virou). */
+      why: string;
     };
 
 export interface InterpretOptions {
@@ -43,41 +45,76 @@ export interface InterpretOptions {
  */
 export function interpret(alts: Alt[], lex: Lexicon, o: InterpretOptions): Cast | null {
   const d = lex.data;
+  /** Por que a fala não virou magia (vai pra tela, junto com o que foi ouvido). */
+  const reason = (dec: Decoded | null, text: string): string => {
+    if (!dec) {
+      // raiz certa, só faltou a forma? (ex.: "gelo" → "gelus")
+      const fix = decode(`${normalize(text).replace(/[aeiou]$/, '')}us`, lex);
+      if (fix && fix.cost <= d.echo.clean)
+        return `Faltou a terminação: tente “${normalize(text).replace(/[aeiou]$/, '')}us”.`;
+      return 'Não soa como a língua do Eco.';
+    }
+    if (dec.cost > d.echo.bent) return 'Não soa como a língua do Eco.';
+    const pieces = dec.morphs.filter((m) => m.kind !== 'linker');
+    const ending = dec.words[0]?.ending ?? '';
+    if (
+      pieces.length < d.rules.minMorphs &&
+      !(pieces.length === 2 && d.rules.shortEndings.includes(ending))
+    )
+      return 'Curta demais: termine em -us ou ponha um prefixo (ma-, la-, mi-…).';
+    if (dec.skips > d.rules.maxSkips) return 'Sobrou som que não é da língua.';
+    if (o.strict && isCommon(text, dec))
+      return 'Palavra comum: segure o microfone pra valer como magia.';
+    return '';
+  };
+  const isCommon = (text: string, dec: Decoded): boolean => {
+    if (!COMMON.has(normalize(text))) return false;
+    // raiz + -us dita limpa ("ventos", "lavos") é magia curta de verdade: não bloqueia
+    const pieces = dec.morphs.filter((m) => m.kind !== 'linker');
+    return !(pieces.length === 2 && dec.words[0]?.ending === 'us' && dec.cost <= d.echo.clean);
+  };
+
+  // escolhe, entre as alternativas do reconhecedor, a que vira encantamento com o menor custo
   let best: Decoded | null = null;
+  let fallback: Decoded | null = null;
   let heard = alts[0]?.text ?? '';
+  let heardFail = heard;
+  let anyFail = false;
   let conf = 0;
   for (const a of alts) {
     const said = normalize(a.text);
     for (const [id, words] of Object.entries(d.commands))
       if (words.includes(said)) return { kind: 'command', id };
     const dec = decode(a.text, lex);
-    if (dec && (!best || dec.cost < best.cost)) {
-      best = dec;
-      heard = a.text;
-      conf = a.confidence;
+    if (dec && !reason(dec, a.text)) {
+      if (!best || dec.cost < best.cost) {
+        best = dec;
+        heard = a.text;
+        conf = a.confidence;
+      }
+    } else if (dec && (!fallback || dec.cost < fallback.cost)) {
+      fallback = dec;
+      heardFail = a.text;
+    } else if (!dec && !anyFail) {
+      anyFail = true;
+      if (!fallback) heardFail = a.text;
     }
   }
-  const phonemes = toPhonemes(heard);
-  const shaped = (dec: Decoded): boolean => {
-    const pieces = dec.morphs.filter((m) => m.kind !== 'linker');
-    const ending = dec.words[0]?.ending ?? '';
-    const enough =
-      pieces.length >= d.rules.minMorphs ||
-      (pieces.length === 2 && d.rules.shortEndings.includes(ending));
-    return enough && dec.skips <= d.rules.maxSkips && !(o.strict && COMMON.has(normalize(heard)));
-  };
-  if (!best || best.cost > d.echo.bent || !shaped(best)) {
+  if (!best) {
+    const phonemes = toPhonemes(heardFail);
     if (phonemes.length < 4) return null; // ruído curto: ignora
     return {
       kind: 'spell',
       echo: 'sem_eco',
       plan: null,
-      morphs: best?.morphs ?? [],
-      heard,
+      morphs: fallback?.morphs ?? [],
+      heard: heardFail,
       phonemes,
-      cost: best?.cost ?? 1,
+      cost: fallback?.cost ?? 1,
+      why: reason(fallback, heardFail),
     };
   }
+  const phonemes = toPhonemes(heard);
 
   // fraco = tudo meio borrado; torto = só UM pedaço escorregou e o resto saiu certo
   const pieces = best.morphs.filter((m) => m.kind !== 'linker');
@@ -96,6 +133,7 @@ export function interpret(alts: Alt[], lex: Lexicon, o: InterpretOptions): Cast 
       heard,
       phonemes,
       cost: best.cost,
+      why: 'Saiu borrado demais: fale cada pedaço mais claro.',
     };
   let morphs = best.morphs;
   if (echo === 'torto') {
@@ -123,5 +161,6 @@ export function interpret(alts: Alt[], lex: Lexicon, o: InterpretOptions): Cast 
     heard,
     phonemes,
     cost: best.cost,
+    why: '',
   };
 }
