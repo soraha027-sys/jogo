@@ -540,3 +540,11 @@ body {
 #hud .atk:not([data-spell])::after {
   display: none;
 }
+
+#hud .online[data-status='conectando'] b,
+#hud .online[data-status='offline'] b {
+  background: #a9b4c8;
+}
+#hud .online[data-status='erro'] b {
+  background: #ff6a7a;
+}

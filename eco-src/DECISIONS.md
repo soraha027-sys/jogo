@@ -31,3 +31,11 @@
 - D24 Feitiço, aceno e dar de ombros em movimento tocam como camada aditiva só do tronco; parada, corpo inteiro. Pouso correndo não trava a corrida.
 - D25 Molas do cabelo, saia e mangas: pêndulo amortecido em passos de 1/120 s, amortecendo a velocidade relativa ao apoio (correr não deixa a manga esticada pra trás). A versão anterior corrigia 100% da posição por quadro e tremia.
 - D26 Botão de atacar (do build que o Rafael enviou) agora está no código: E, clique esquerdo com o mouse travado, RB ou botão na tela relançam a última magia falada, com recarga de 0,45 s.
+
+## Multiplayer
+- D27 Sem código de convite: quem abre o link entra na sala `praca` (pedido do Rafael). `?sala=nome` cria uma separada. Até 8; além disso o cliente ignora quem chega.
+- D28 Trystero 0.26 com relés Nostr públicos (só apresentam os pares; o jogo vai direto por WebRTC). Carregado sob demanda: se falhar, o jogo segue solo e o ícone da sala fica vermelho.
+- D29 Snapshots a 15 Hz (array de 10 números), exibidos 100 ms atrasados e interpolados; a própria bruxa é 100% local. Contadores de pulo/pouso viajam no snapshot pra animação remota disparar igual.
+- D30 Magia na rede = só as palavras já decodificadas + potência + origem + mira. Cada cliente recalcula a magia pela mesma lógica e valida tudo que chega (raiz/prefixo/terminação têm que existir na língua).
+- D31 Anfitrião = menor id da sala, sem troca de mensagem; se ele sai, o próximo assume sozinho. Hoje ele não decide nada (não há estado compartilhado ainda); fica pronto pra quando houver inimigos/objetos.
+- D32 Voz por proximidade fica pra depois: no Android o Chrome não divide o microfone entre o reconhecimento de feitiço e uma chamada.

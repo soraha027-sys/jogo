@@ -25,4 +25,10 @@ export interface GameEvents {
   /** Fala parcial já decodificada pra língua do jogo. */
   'voice:interim': string;
   'voice:error': string;
+  /** Multiplayer: jogadores na sala (contando você) e estado da conexão. */
+  'net:changed': {
+    count: number;
+    status: 'conectando' | 'online' | 'local' | 'offline' | 'erro';
+    detail?: string;
+  };
 }

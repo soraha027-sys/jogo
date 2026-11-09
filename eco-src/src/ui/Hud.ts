@@ -18,7 +18,12 @@ export class Hud {
     const badge = document.createElement('b');
     quality.append(badge);
     const debug = button(icons.debug, 'Debug', actions.toggleDebug);
-    top.append(quality, debug);
+    const online = button(icons.users, 'Jogadores na sala', () => undefined);
+    online.className = 'online';
+    const count = document.createElement('b');
+    count.textContent = '1';
+    online.append(count);
+    top.append(online, quality, debug);
 
     const hint = document.createElement('div');
     hint.className = 'hint';
@@ -30,6 +35,12 @@ export class Hud {
       badge.classList.toggle('auto', auto);
     });
     events.on('debug:changed', (on) => debug.classList.toggle('on', on));
+    events.on('net:changed', ({ count: n, status, detail }) => {
+      count.textContent = String(n);
+      online.dataset.status = status;
+      online.title = `${status}${detail ? ` · ${detail}` : ''} · ${n} na sala`;
+      online.classList.toggle('on', n > 1);
+    });
     this.setLocked = (locked) => hint.classList.toggle('off', locked);
   }
 

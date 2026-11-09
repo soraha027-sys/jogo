@@ -20,10 +20,17 @@ import { Dust } from '../vfx/Dust';
 import { Voice } from '../voice/Voice';
 import { createArena } from '../world/Arena';
 import { Dummy } from '../world/Dummies';
+import { Net } from '../net/Net';
+import type { CastMsg } from '../net/protocol';
+import { RemotePlayer } from '../net/RemotePlayer';
+import { localTransport, trysteroTransport, type Transport } from '../net/transport';
+import { plan as makePlan } from '../spells/essence';
 import { Events, type GameEvents } from './Events';
 import { FixedLoop } from './Loop';
 
 const SUN_OFFSET = { x: 14, y: 30, z: 18 } as const;
+/** Todo mundo que abre o link cai na mesma sala. `?sala=nome` separa; `?net=local` testa entre abas; `?net=off` desliga. */
+const APP_ID = 'eco-soraha027-jogo';
 /** Teclas 1-5: harmônica com infusão · opostos ligados por ko · avesso · opostos sem ko (estoura) · não é a língua. */
 const PRESETS = ['ventus gelus', 'kopirigelor', 'laventus gel', 'pirigelor', 'abacaxi com banana'];
 
@@ -44,7 +51,11 @@ export async function createGame(
   const world = createArena(scene);
   const dust = new Dust(scene);
   const rig = new ThirdPersonCamera();
-  const player = new Player(world.spawn, world.half, events);
+  // cada um nasce num ponto um pouco diferente: na sala ninguém aparece dentro do outro
+  const spawn = world.spawn
+    .clone()
+    .add(new Vector3((Math.random() - 0.5) * 8, 0, (Math.random() - 0.5) * 4));
+  const player = new Player(spawn, world.half, events);
   const witch = await Witch.load({
     step: (p, running) => dust.step(p, running),
     jump: (p, double) => dust.jump(p, double),
@@ -158,6 +169,16 @@ export async function createGame(
       run: () => {
         const hand = witch.handPosition(new Vector3());
         const ok = spells.cast(plan, power, hand, aim, player.pos);
+        net?.sendCast({
+          words: [plan.body, ...(plan.infusion ? [plan.infusion] : [])].map((w) => ({
+            prefixes: w.prefixes,
+            roots: w.roots,
+            ending: w.ending,
+          })),
+          power,
+          origin: [hand.x, hand.y, hand.z],
+          aim: [aim.x, aim.y, aim.z],
+        });
         witch.punch(ok ? -1.6 : -3);
         rig.kick(ok ? 0.05 : 0);
         if (ok) return;
@@ -201,6 +222,61 @@ export async function createGame(
     { toggleMic: () => void voice.toggle(), say: simulate },
     PRESETS,
   );
+
+  // ---------- multiplayer: abriu o link, está na sala ----------
+  let net: Net | null = null;
+  const remotes = new Map<string, RemotePlayer>();
+  const remoteFx = {
+    step: (p: Vector3, running: boolean) => dust.step(p, running),
+    jump: (p: Vector3, double: boolean) => dust.jump(p, double),
+    land: (p: Vector3) => dust.land(p),
+  };
+  const netStatus = (status: GameEvents['net:changed']['status'], detail?: string): void =>
+    events.emit('net:changed', { count: net?.count ?? 1, status, detail });
+  const onRemoteCast = (id: string, m: CastMsg): void => {
+    const r = remotes.get(id);
+    const p = makePlan(m.words, data);
+    if (!r || !p) return;
+    r.witch.trigger('cast');
+    const at = new Vector3(r.state.x, r.state.y, r.state.z);
+    const ok = spells.cast(p, m.power, new Vector3(...m.origin), new Vector3(...m.aim), at);
+    if (!ok) {
+      r.witch.trigger('fail');
+      r.witch.setSoot(4);
+    }
+  };
+  const connect = async (): Promise<void> => {
+    const mode = query.get('net');
+    if (mode === 'off') return netStatus('offline');
+    const room = query.get('sala') ?? 'praca';
+    netStatus('conectando');
+    let t: Transport;
+    try {
+      t = mode === 'local' ? localTransport(room) : await trysteroTransport(APP_ID, room);
+    } catch (err) {
+      return netStatus('erro', err instanceof Error ? err.message : String(err));
+    }
+    net = new Net(t, {
+      join: (id) => {
+        netStatus(t.kind === 'local' ? 'local' : 'online');
+        void RemotePlayer.create(remoteFx).then((r) => {
+          if (!net?.buffers.has(id)) return; // saiu antes de carregar
+          remotes.set(id, r);
+          scene.add(r.object);
+        });
+      },
+      leave: (id) => {
+        const r = remotes.get(id);
+        if (r) scene.remove(r.object);
+        remotes.delete(id);
+        netStatus(t.kind === 'local' ? 'local' : 'online');
+      },
+      cast: onRemoteCast,
+    });
+    netStatus(t.kind === 'local' ? 'local' : 'online');
+    addEventListener('pagehide', () => net?.leave());
+  };
+  void connect();
 
   const input = new InputManager();
   const touch = new TouchSource(canvas, hudRoot);
@@ -257,6 +333,21 @@ export async function createGame(
           p.run();
         }
       }
+      net?.update(dt, {
+        x: player.pos.x,
+        y: player.pos.y,
+        z: player.pos.z,
+        yaw: player.yaw,
+        speed: player.speed,
+        grounded: player.grounded,
+        flying: player.flying,
+        jumpCount: player.jumpCount,
+        lastJumpDouble: player.lastJumpDouble,
+        landCount: player.landCount,
+        mouth,
+      });
+      const now = performance.now() / 1000;
+      for (const [id, r] of remotes) r.update(dt, now, net?.buffers.get(id));
       spells.update(dt);
       dust.update(dt);
       for (const d of dummies) d.update(dt);
@@ -272,8 +363,10 @@ export async function createGame(
         state: player.flying ? 'voo' : player.grounded ? 'chão' : 'ar',
         pos: player.pos,
         mic: voice.on,
-        ping: null,
-        voice: diag,
+        ping: net?.ping ?? null,
+        voice:
+          (net ? `sala: ${net.count} · ${net.kind}${net.isHost ? ' · anfitrião' : ''}\n` : '') +
+          diag,
       }));
     },
   });

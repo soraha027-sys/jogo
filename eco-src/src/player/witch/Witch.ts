@@ -228,6 +228,12 @@ export class Witch {
     this.startShot(name, name === 'wave' || name === 'shrug' ? 'emote' : 'action', 0.1);
   }
 
+  /** Alinha os contadores de pulo/pouso sem disparar animação (jogador remoto entrando). */
+  sync(jumpCount: number, landCount: number): void {
+    this.jumps = jumpCount;
+    this.lands = landCount;
+  }
+
   toggleSit(): void {
     this.sitting = !this.sitting;
     if (this.shotKind === 'emote') this.shotLeft = 0;
