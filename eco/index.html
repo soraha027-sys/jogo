@@ -611,9 +611,12 @@ h1 { margin: 0 0 4px; font: 700 15px/1.1 var(--font-display); letter-spacing: 0.
   function readMic() { if (!an) return; an.getByteTimeDomainData(abuf); var s = 0; for (var i = 0; i < abuf.length; i++) { var v = (abuf[i] - 128) / 128; s += v * v; } bf.mic = Math.sqrt(s / abuf.length); bf.pk = Math.max(bf.pk, bf.mic); }
   function norm(x) { return x.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z ]/g, " ").replace(/\s+/g, " ").trim(); }
   function lev(a, b) { var d = [], i, j; for (i = 0; i <= a.length; i++) d[i] = [i]; for (j = 1; j <= b.length; j++) d[0][j] = j; for (i = 1; i <= a.length; i++) for (j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[a.length][b.length]; }
-  function judge(txt) {
-    var n = norm(txt), sim = 1 - lev(n, SPELL) / Math.max(n.length, SPELL.length), w = n.split(" ").length, k = null;
-    if (sim >= 0.8) k = bf.pk < 0.05 ? "fraco" : "ok"; else if (w < 3 && sim > 0.4) k = "faltou"; else if (sim >= 0.55) k = "torto"; else if (sim >= 0.3) k = "explode";
+  function fon(x) { return norm(x).replace(/qu/g, "k").replace(/c(?=[aou])/g, "k").replace(/ss?/g, "s").replace(/o\b/g, "u").replace(/e\b/g, "i").replace(/h/g, ""); }
+  function simOf(t) { var n = fon(t), sp = fon(SPELL); return n ? 1 - lev(n, sp) / Math.max(n.length, sp.length) : 0; }
+  function judge(txt, alts) {
+    var best = txt; (alts || []).forEach(function (a) { if (simOf(a) > simOf(best)) best = a; });
+    var n = fon(best), sim = simOf(best), w = n.split(" ").length, k = null;
+    if (sim >= 0.75) k = (an && bf.pk < 0.05) ? "fraco" : "ok"; else if (w < 3 && sim > 0.4) k = "faltou"; else if (sim >= 0.55) k = "torto"; else if (sim >= 0.3) k = "explode";
     bf.pk = 0; if (k) cast(k); else toast("Não entendi. Fale de novo", "#fff");
   }
   // microfone: liga/desliga durante o jogo, transcrição ao vivo na tela
@@ -625,31 +628,44 @@ h1 { margin: 0 0 4px; font: 700 15px/1.1 var(--font-display); letter-spacing: 0.
     said.style.opacity = fin || tmp ? 1 : 0; saidT = 2.5;
   }
   function land() { if (bf.st === "fly") { bf.st = "land"; bf.t = 0; } }
-  function hear(txt) { if (/\bpous/.test(norm(txt))) { land(); return; } judge(txt); }
   function micStop() {
     micOn = false; micBtn.setAttribute("aria-pressed", "false"); micBtn.style.boxShadow = "";
     if (rec) { try { rec.abort(); } catch (x) {} rec = null; }
     if (micStream) micStream.getTracks().forEach(function (t) { t.stop(); });
     if (micCtx) micCtx.close(); micStream = micCtx = an = null; bf.mic = 0; showSaid("", "");
   }
+  var ANDROID = /Android/i.test(navigator.userAgent);
+  var ERRS = { "audio-capture": "Outro app está usando o microfone", "not-allowed": "Permissão do microfone negada", "service-not-allowed": "Reconhecimento de voz bloqueado neste navegador", "network": "Sem internet pro reconhecimento de voz", "language-not-supported": "Português não disponível no reconhecimento" };
+  function recStart() { if (micOn && rec) try { rec.start(); } catch (x) {} }
   function micStart() {
     var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { toast("Microfone indisponível aqui", "#ff8a5a"); return; }
-    navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stm) {
-      micStream = stm; micOn = true; micBtn.setAttribute("aria-pressed", "true");
-      micCtx = new (window.AudioContext || window.webkitAudioContext)(); an = micCtx.createAnalyser(); an.fftSize = 512; abuf = new Uint8Array(an.fftSize); micCtx.createMediaStreamSource(stm).connect(an);
-      if (!SR) { toast("Este navegador não reconhece fala. Use o Chrome", "#ff8a5a"); return; }
-      rec = new SR(); rec.lang = "pt-BR"; rec.continuous = true; rec.interimResults = true;
-      rec.onresult = function (e) {
-        var fin = "", tmp = "";
-        for (var i = e.resultIndex; i < e.results.length; i++) { var t = e.results[i][0].transcript; if (e.results[i].isFinal) fin += t; else tmp += t; }
-        showSaid(fin.trim(), tmp.trim());
-        if (fin.trim()) hear(fin);
-      };
-      rec.onerror = function (e) { if (e.error === "not-allowed") { toast("Permissão do microfone negada", "#ff8a5a"); micStop(); } };
-      rec.onend = function () { if (micOn && rec) try { rec.start(); } catch (x) {} };
-      try { rec.start(); } catch (x) {}
-    }).catch(function () { toast("Microfone indisponível aqui", "#ff8a5a"); });
+    if (!SR) { toast("Este navegador não reconhece fala. Abra no Chrome", "#ff8a5a"); return; }
+    micOn = true; micBtn.setAttribute("aria-pressed", "true"); showSaid("", "ouvindo…");
+    rec = new SR(); rec.lang = "pt-BR"; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 5;
+    rec.onresult = function (e) {
+      var fin = "", tmp = "", alts = [];
+      for (var i = e.resultIndex; i < e.results.length; i++) {
+        var r = e.results[i], t = r[0].transcript;
+        if (r.isFinal) { fin += t; for (var j = 0; j < r.length; j++) alts.push(r[j].transcript); } else tmp += t;
+      }
+      if (!an) bf.speak = Math.max(bf.speak, 0.35);                         // sem leitura de volume: a boca mexe pelo texto
+      showSaid(fin.trim(), tmp.trim());
+      if (fin.trim()) { if (/\bpous/.test(norm(fin))) land(); else judge(fin, alts); }
+    };
+    rec.onerror = function (e) {
+      if (e.error === "no-speech" || e.error === "aborted") return;
+      toast(ERRS[e.error] || ("Erro na voz: " + e.error), "#ff8a5a");
+      if (e.error === "not-allowed" || e.error === "service-not-allowed" || e.error === "language-not-supported") micStop();
+    };
+    rec.onend = function () { if (micOn) setTimeout(recStart, 250); };
+    recStart();
+    // volume da voz (boca e "sem força"): no Android o Chrome não deixa dividir o microfone com o reconhecimento
+    if (!ANDROID && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stm) {
+        if (!micOn) { stm.getTracks().forEach(function (t) { t.stop(); }); return; }
+        micStream = stm; micCtx = new (window.AudioContext || window.webkitAudioContext)(); an = micCtx.createAnalyser(); an.fftSize = 512; abuf = new Uint8Array(an.fftSize); micCtx.createMediaStreamSource(stm).connect(an);
+      }).catch(function () {});
+    }
   }
   micBtn.addEventListener("click", function () { if (micOn) micStop(); else micStart(); });
   landBtn.addEventListener("click", land);
@@ -660,7 +676,7 @@ h1 { margin: 0 0 4px; font: 700 15px/1.1 var(--font-display); letter-spacing: 0.
   });
   function micTick(dt) {
     landBtn.hidden = bf.st !== "fly";
-    if (micOn) micBtn.style.boxShadow = "0 0 0 " + Math.min(10, bf.mic * 60).toFixed(1) + "px rgba(80,255,220,0.35)";
+    if (micOn) micBtn.style.boxShadow = "0 0 0 " + (an ? Math.min(10, bf.mic * 60) : (bf.speak > 0 ? 6 : 2 + Math.sin(time * 4) * 2)).toFixed(1) + "px rgba(80,255,220,0.35)";
     if (saidT > 0) { saidT -= dt; if (saidT <= 0) said.style.opacity = 0; }
   }
 
