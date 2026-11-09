@@ -47,19 +47,34 @@ class VolumeMeter {
 }
 
 /** Liga/desliga o microfone, entrega as falas finais e dá a abertura da boca. */
+export type MicMode = 'off' | 'hold' | 'open';
+
+/**
+ * Microfone em dois jeitos:
+ * - segurar (padrão): só o que é dito com o botão apertado conta como magia. Conversa não vira feitiço.
+ * - aberto (toque rápido no botão / M): ouve sempre, com filtro rígido (palavras comuns do português são ignoradas).
+ * Também entrega a abertura da boca (volume no PC; pelo texto no Android).
+ */
 export class Voice {
-  on = false;
+  mode: MicMode = 'off';
   private meter: VolumeMeter | null = null;
   private readonly speech: SpeechInput;
   private talking = 0;
   private t = 0;
   private busy = false;
+  /** Até quando um resultado que chega ainda pertence ao último "segurar" (o final vem depois de soltar). */
+  private holdUntil = 0;
+  private meterTimer = 0;
+
+  get on(): boolean {
+    return this.mode !== 'off';
+  }
 
   constructor(
     private readonly events: Events<GameEvents>,
     o: { weakVolume: number; lang: string; phrases: string[] },
     onInterim: (text: string) => void,
-    onSpeech: (alts: Alt[], weak: boolean) => void,
+    onSpeech: (alts: Alt[], weak: boolean, strict: boolean) => void,
   ) {
     const weakVolume = o.weakVolume;
     this.speech = new SpeechInput(
@@ -70,11 +85,13 @@ export class Voice {
         },
         final: (alts) => {
           const peak = this.meter?.takePeak();
-          onSpeech(alts, peak !== undefined && peak < weakVolume);
+          const held = this.mode === 'hold' || performance.now() < this.holdUntil;
+          onSpeech(alts, peak !== undefined && peak < weakVolume, !held);
         },
         error: (message, fatal) => {
+          if (this.mode === 'hold' && message === 'Não ouvi nada.') return;
           events.emit('voice:error', message);
-          if (fatal) this.set(false);
+          if (fatal) this.set('off');
         },
       },
       o.lang,
@@ -82,15 +99,17 @@ export class Voice {
     );
   }
 
-  async toggle(): Promise<void> {
-    if (this.busy) return;
-    if (this.on) return this.set(false);
-    if (!SpeechInput.supported) return this.events.emit('voice:error', UNSUPPORTED);
-    this.busy = true;
+  private async open(): Promise<boolean> {
+    if (!SpeechInput.supported) {
+      this.events.emit('voice:error', UNSUPPORTED);
+      return false;
+    }
     try {
-      if (!IS_ANDROID && navigator.mediaDevices) this.meter = await VolumeMeter.create();
+      clearTimeout(this.meterTimer);
+      if (!this.meter && !IS_ANDROID && navigator.mediaDevices)
+        this.meter = await VolumeMeter.create();
       this.speech.start();
-      this.set(true);
+      return true;
     } catch (err) {
       const denied = err instanceof DOMException && err.name === 'NotAllowedError';
       this.events.emit(
@@ -99,18 +118,49 @@ export class Voice {
           ? 'Microfone bloqueado. Libere a permissão do microfone no navegador.'
           : `Não consegui abrir o microfone: ${err instanceof Error ? err.message : String(err)}`,
       );
-    } finally {
-      this.busy = false;
+      return false;
     }
   }
 
-  private set(on: boolean): void {
-    if (!on) {
-      this.speech.stop();
-      this.meter?.dispose();
-      this.meter = null;
+  /** Segurar pra falar a magia. */
+  async hold(down: boolean): Promise<void> {
+    if (this.mode === 'open') return;
+    if (down) {
+      if (this.busy || this.mode === 'hold') return;
+      this.busy = true;
+      if (await this.open()) this.set('hold');
+      this.busy = false;
+    } else if (this.mode === 'hold') {
+      this.holdUntil = performance.now() + 2500;
+      this.speech.release();
+      this.set('off', 2500);
     }
-    if (this.on !== on) this.events.emit('mic:changed', (this.on = on));
+  }
+
+  /** Microfone sempre aberto (liga/desliga). */
+  async toggle(): Promise<void> {
+    if (this.busy) return;
+    if (this.mode === 'open') return this.set('off');
+    this.busy = true;
+    if (await this.open()) this.set('open');
+    this.busy = false;
+  }
+
+  private set(mode: MicMode, keepMeterMs = 0): void {
+    if (mode === 'off') {
+      if (this.mode === 'open') this.speech.stop();
+      // o medidor fica mais um pouco: o resultado final ainda vai pedir o pico de volume
+      this.meterTimer = window.setTimeout(() => {
+        if (this.mode !== 'off') return;
+        this.meter?.dispose();
+        this.meter = null;
+      }, keepMeterMs);
+    }
+    const was = this.mode;
+    this.mode = mode;
+    if ((was !== 'off') !== (mode !== 'off') || was !== mode)
+      this.events.emit('mic:changed', mode !== 'off');
+    this.events.emit('mic:mode', mode);
   }
 
   /** Mexe a boca por texto (Android, fala simulada). */

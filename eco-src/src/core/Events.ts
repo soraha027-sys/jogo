@@ -21,6 +21,7 @@ export interface GameEvents {
   'quality:changed': { id: QualityId; auto: boolean };
   'fly:changed': boolean;
   'mic:changed': boolean;
+  'mic:mode': 'off' | 'hold' | 'open';
   'debug:changed': boolean;
   /** Fala parcial já decodificada pra língua do jogo. */
   'voice:interim': string;

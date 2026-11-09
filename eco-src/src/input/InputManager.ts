@@ -12,7 +12,7 @@ export class InputManager {
   sample(dt: number): void {
     const f = this.frame;
     f.moveX = f.moveY = f.lookX = f.lookY = 0;
-    f.jump = f.sprint = false;
+    f.jump = f.sprint = f.castHeld = false;
     for (const s of this.sources) s.sample(f, dt);
     const len = Math.hypot(f.moveX, f.moveY);
     if (len > 1) {

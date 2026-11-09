@@ -1,33 +1,125 @@
 {
   "axes": ["heat", "mass", "flow", "bond", "glow", "warp"],
   "roots": {
-    "pir": { "essence": [1, -0.4, 0.3, -0.7, 0.8, 0], "gloss": "calor" },
-    "vent": { "essence": [0, -1, 1, -0.9, 0, 0], "gloss": "ar" },
-    "gel": { "essence": [-1, 0.3, -0.5, 0.9, 0.3, 0], "gloss": "frio", "alt": ["jeu"] },
-    "lav": { "essence": [-0.15, 0.5, 0.5, -0.3, 0, 0], "gloss": "água" },
-    "ter": { "essence": [0.1, 1, -0.8, 0.8, -0.4, 0], "gloss": "pedra" },
-    "kor": { "essence": [0, 0.2, -0.2, 0.2, -0.5, 1], "gloss": "matéria" }
+    "pir": {
+      "essence": [1, -0.4, 0.3, -0.7, 0.8, 0],
+      "gloss": "calor",
+      "verbs": {
+        "damage": 0.5,
+        "burn": 1
+      }
+    },
+    "vent": {
+      "essence": [0, -1, 1, -0.9, 0, 0],
+      "gloss": "ar",
+      "verbs": {
+        "damage": 0.2,
+        "push": 1,
+        "lift": 0.5
+      }
+    },
+    "gel": {
+      "essence": [-1, 0.3, -0.5, 0.9, 0.3, 0],
+      "gloss": "frio",
+      "alt": ["jeu"],
+      "verbs": {
+        "damage": 0.4,
+        "chill": 1
+      }
+    },
+    "lav": {
+      "essence": [-0.15, 0.5, 0.5, -0.3, 0, 0],
+      "gloss": "água",
+      "verbs": {
+        "damage": 0.2,
+        "wet": 1,
+        "push": 0.35
+      }
+    },
+    "ter": {
+      "essence": [0.1, 1, -0.8, 0.8, -0.4, 0],
+      "gloss": "pedra",
+      "verbs": {
+        "damage": 1,
+        "stun": 0.6,
+        "solid": 1
+      }
+    },
+    "kor": {
+      "essence": [0, 0.2, -0.2, 0.2, -0.5, 1],
+      "gloss": "matéria",
+      "verbs": {
+        "damage": 0.35,
+        "pull": 1,
+        "drain": 0.6
+      }
+    }
   },
   "prefixes": {
-    "la": { "gloss": "avesso: inverte a essência da palavra" },
-    "ma": { "gloss": "grande" },
-    "mi": { "gloss": "pequeno e rápido" },
-    "re": { "gloss": "eco: repete três vezes" },
-    "al": { "gloss": "vem do alto", "alt": ["au"] },
-    "ko": { "gloss": "liga essências opostas" }
+    "la": {
+      "gloss": "avesso: inverte a essência da palavra"
+    },
+    "ma": {
+      "gloss": "grande"
+    },
+    "mi": {
+      "gloss": "pequeno e rápido"
+    },
+    "re": {
+      "gloss": "eco: repete três vezes"
+    },
+    "al": {
+      "gloss": "vem do alto",
+      "alt": ["au"]
+    },
+    "ko": {
+      "gloss": "liga essências opostas"
+    }
   },
   "endings": {
-    "us": { "shape": "vortex", "gloss": "vórtice", "cost": 16 },
-    "or": { "shape": "projectile", "gloss": "projétil", "cost": 10, "alt": ["ou"] },
-    "a": { "shape": "wave", "gloss": "onda", "cost": 14 },
-    "um": { "shape": "pillar", "gloss": "pilar", "cost": 12 },
-    "ar": { "shape": "jet", "gloss": "jato", "cost": 12 },
-    "ia": { "shape": "rain", "gloss": "chuva", "cost": 18 }
+    "us": {
+      "shape": "vortex",
+      "gloss": "vórtice",
+      "cost": 16
+    },
+    "or": {
+      "shape": "projectile",
+      "gloss": "projétil",
+      "cost": 10,
+      "alt": ["ou"]
+    },
+    "a": {
+      "shape": "wave",
+      "gloss": "onda",
+      "cost": 14
+    },
+    "um": {
+      "shape": "pillar",
+      "gloss": "pilar",
+      "cost": 12
+    },
+    "ar": {
+      "shape": "jet",
+      "gloss": "jato",
+      "cost": 12
+    },
+    "ia": {
+      "shape": "rain",
+      "gloss": "chuva",
+      "cost": 18
+    }
   },
   "linkers": ["i", "o", "u", "e"],
   "rootWeights": [1, 0.6, 0.4],
-  "tension": { "turbulent": 0.6, "unstable": 1.2 },
-  "echo": { "clean": 0.12, "weak": 0.24, "bent": 0.36 },
+  "tension": {
+    "turbulent": 0.6,
+    "unstable": 1.2
+  },
+  "echo": {
+    "clean": 0.07,
+    "weak": 0.14,
+    "bent": 0.2
+  },
   "commands": {
     "vassoura": ["vassoura"],
     "sentar": ["sentar", "senta"],
@@ -36,5 +128,33 @@
   "weakConfidence": 0.45,
   "weakVolume": 0.02,
   "manaMax": 100,
-  "manaRegen": 14
+  "manaRegen": 14,
+  "rules": {
+    "minMorphs": 3,
+    "shortEndings": ["us"],
+    "maxSkips": 1
+  },
+  "opposites": {
+    "burn": "chill",
+    "chill": "burn",
+    "push": "pull",
+    "pull": "push",
+    "wet": "dry",
+    "dry": "wet",
+    "lift": "slam",
+    "slam": "lift"
+  },
+  "combat": {
+    "hp": 120,
+    "damageUnit": 18,
+    "burnSeconds": 3,
+    "burnDps": 6,
+    "wetSeconds": 6,
+    "chillToFreeze": 3,
+    "freezeSeconds": 2.5,
+    "stunSeconds": 1,
+    "pushSpeed": 8,
+    "pullSpeed": 7,
+    "liftSpeed": 7
+  }
 }

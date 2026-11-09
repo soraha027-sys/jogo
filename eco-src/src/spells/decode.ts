@@ -18,6 +18,8 @@ export interface Decoded {
   morphs: Morph[];
   /** Custo normalizado 0..1 da fala inteira. */
   cost: number;
+  /** Sons ouvidos que não couberam em nenhum morfema. */
+  skips: number;
 }
 
 interface Form {
@@ -54,7 +56,8 @@ const NEXT: Record<MorphKind, Record<number, number>> = {
   linker: { 1: 2, 4: 5 },
   ending: { 1: 3, 4: 6 },
 };
-const ACCEPT = [1, 3, 4, 6];
+// a 1ª palavra precisa de terminação: essência sem forma não é encantamento
+const ACCEPT = [3, 4, 6];
 const STATES = 7;
 const SKIP = 1;
 
@@ -96,7 +99,7 @@ export function decode(text: string, lex: Lexicon): Decoded | null {
         const L = f.ph.length;
         for (let len = Math.max(1, L - 1); len <= L + 1 && i + len <= n; len++) {
           const c = soundDistance(ph.slice(i, i + len), f.ph);
-          if (c > L * 0.5) continue;
+          if (c > Math.max(0.6, L * 0.34)) continue;
           relax(i + len, ns, { cost: here.cost + c, from: i, state: s, form: f, step: c });
         }
       }
@@ -109,17 +112,18 @@ export function decode(text: string, lex: Lexicon): Decoded | null {
   if (!end) return null;
   const morphs: Morph[] = [];
   let length = 0;
+  let skips = 0;
   let cell: Cell | null = end;
   while (cell && cell.from >= 0) {
     if (cell.form) {
       morphs.unshift({ kind: cell.form.kind, id: cell.form.id, cost: cell.step });
       length += cell.form.ph.length;
-    }
+    } else skips++;
     cell = grid[cell.from]?.[cell.state] ?? null;
   }
   const words = toWords(morphs);
   if (words.length === 0) return null;
-  return { words, morphs, cost: end.cost / Math.max(n, length) };
+  return { words, morphs, cost: end.cost / Math.max(n, length), skips };
 }
 
 export function toWords(morphs: Morph[]): ParsedWord[] {

@@ -32,6 +32,8 @@ export class Player {
   private airJumps = 1;
   private bank = 0;
   grounded = true;
+  /** Chão escorregadio debaixo dela (poça, gelo). */
+  surface: 'gelo' | 'poca' | null = null;
   flying = false;
   /** Contadores pra máquina de animação reagir a eventos sem acoplar. */
   jumpCount = 0;
@@ -70,6 +72,14 @@ export class Player {
     this.grounded = false;
   }
 
+  /** Soma um impulso (coice do jato de vento). */
+  impulse(v: { x: number; y: number; z: number }): void {
+    this.vel.x += v.x;
+    this.vel.y += v.y;
+    this.vel.z += v.z;
+    if (v.y > 0) this.grounded = false;
+  }
+
   /** Vira pra uma direção e segura um instante (mirar o feitiço). */
   face(yaw: number, hold = 0.7): void {
     this.facing = yaw;
@@ -99,7 +109,8 @@ export class Player {
       vel.y += (-Math.sin(pitch) * inp.moveY * speed + (inp.jump ? 7 : 0) - vel.y) * k;
     } else {
       const speed = inp.sprint ? RUN : WALK;
-      const k = damp(this.grounded ? 14 : 4, dt);
+      const grip = this.surface === 'gelo' ? 1.2 : this.surface === 'poca' ? 5 : 14;
+      const k = damp(this.grounded ? grip : 4, dt);
       vel.x += ((-sy * inp.moveY + cy * inp.moveX) * speed - vel.x) * k;
       vel.z += ((-cy * inp.moveY - sy * inp.moveX) * speed - vel.z) * k;
       vel.y -= GRAVITY * dt;

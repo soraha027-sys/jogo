@@ -59,14 +59,45 @@ export class SpellHud {
     events: Events<GameEvents>,
     private readonly data: Lingua,
     private readonly grimoire: Grimoire,
-    actions: { toggleMic(): void; say(text: string, preset?: number): void },
+    actions: {
+      toggleMic(): void;
+      holdMic(down: boolean): void;
+      say(text: string, preset?: number): void;
+    },
     presets: string[],
   ) {
     this.mic.setAttribute('aria-label', 'Microfone');
-    this.mic.addEventListener('click', () => {
-      actions.toggleMic();
-      this.mic.blur();
+    // segurar = falar uma magia (padrão); toque rápido = microfone sempre aberto
+    let pressTimer = 0;
+    let holding = false;
+    this.mic.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      try {
+        this.mic.setPointerCapture(e.pointerId);
+      } catch {
+        /* ponteiro sintético */
+      }
+      navigator.vibrate?.(10);
+      pressTimer = window.setTimeout(() => {
+        pressTimer = 0;
+        holding = true;
+        actions.holdMic(true);
+      }, 180);
     });
+    const up = (): void => {
+      if (pressTimer) {
+        clearTimeout(pressTimer);
+        pressTimer = 0;
+        actions.toggleMic();
+      } else if (holding) {
+        holding = false;
+        actions.holdMic(false);
+      }
+      this.mic.blur();
+    };
+    this.mic.addEventListener('pointerup', up);
+    this.mic.addEventListener('pointercancel', up);
+    this.mic.addEventListener('contextmenu', (e) => e.preventDefault());
     const voice = el('div', 'voice');
     voice.append(this.error, this.mic);
     // a fala e o resultado ficam no alto: embaixo cobririam a personagem
@@ -109,6 +140,10 @@ export class SpellHud {
     this.panel.hidden = true;
     root.append(bar, test, out, voice, this.panel);
 
+    events.on('mic:mode', (mode) => {
+      this.mic.classList.toggle('hold', mode === 'hold');
+      this.mic.classList.toggle('open', mode === 'open');
+    });
     events.on('mic:changed', (on) => {
       this.mic.classList.toggle('on', on);
       this.mic.innerHTML = on ? icons.mic : icons.micOff;

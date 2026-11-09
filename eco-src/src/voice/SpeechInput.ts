@@ -25,6 +25,7 @@ interface SR {
   onend: (() => void) | null;
   start(): void;
   abort(): void;
+  stop(): void;
 }
 type SRCtor = new () => SR;
 
@@ -80,6 +81,13 @@ export class SpeechInput {
   start(): void {
     this.wanted = true;
     this.open();
+  }
+
+  /** Solta o botão: para de ouvir, mas ainda entrega o resultado final do que já foi dito. */
+  release(): void {
+    this.wanted = false;
+    clearTimeout(this.timer);
+    this.rec?.stop();
   }
 
   stop(): void {

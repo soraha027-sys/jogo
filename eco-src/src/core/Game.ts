@@ -20,6 +20,8 @@ import { Dust } from '../vfx/Dust';
 import { Voice } from '../voice/Voice';
 import { createArena } from '../world/Arena';
 import { Dummy } from '../world/Dummies';
+import { Zones } from '../spells/Zones';
+import { Popups } from '../ui/Popups';
 import { Net } from '../net/Net';
 import type { CastMsg } from '../net/protocol';
 import { RemotePlayer } from '../net/RemotePlayer';
@@ -74,14 +76,32 @@ export async function createGame(
     rig.pitch = 0.04;
     rig.yaw = { front: Math.PI, side: Math.PI / 2, q: Math.PI * 0.8 }[view] ?? 0;
   }
-  const dummies = [-3.5, 0, 3.5].map(
-    (x) => new Dummy(scene, x, -1 + Math.abs(x) * 0.25, world.colliders),
+  const zones = new Zones(scene);
+  const popups = new Popups(hudRoot);
+  const DUMMY_SPOTS: [number, number][] = [
+    [-5, -3],
+    [0, -4],
+    [5, -3],
+    [-2.5, -8],
+    [2.5, -8],
+  ];
+  const dummies = DUMMY_SPOTS.map(
+    ([x, z]) =>
+      new Dummy(scene, x, z, world.colliders, (at) => {
+        spells.smoke(at, 30, 5);
+        dust.land(at.clone().setY(0));
+        popups.spawn('QUEBROU', at.clone().setY(2.4), 'solid', true);
+      }),
   );
 
   const data = LINGUA;
   const lexicon = buildLexicon(data);
   const grimoire = new Grimoire();
-  const spells = new SpellSystem(data, scene, world.colliders, dummies);
+  const spells: SpellSystem = new SpellSystem(data, scene, world.colliders, dummies, zones, {
+    popup: (text, at, kind, big) => popups.spawn(text, at, kind, big),
+    drain: (amount) => (spells.mana = Math.min(data.manaMax, spells.mana + amount)),
+    recoil: (v) => player.impulse(v),
+  });
   const pending: { at: number; run: () => void }[] = [];
   let time = 0;
   let diag = '';
@@ -190,8 +210,8 @@ export async function createGame(
       },
     });
   };
-  const say = (alts: Alt[], weak: boolean): void => {
-    const cast = interpret(alts, lexicon, { rng: Math.random, weak });
+  const say = (alts: Alt[], weak: boolean, strict = false): void => {
+    const cast = interpret(alts, lexicon, { rng: Math.random, weak, strict });
     if (cast) onCast(cast);
   };
   /** Fala parcial: já mostra na língua do jogo, nunca o português que o Chrome achou que ouviu. */
@@ -219,7 +239,7 @@ export async function createGame(
     events,
     data,
     grimoire,
-    { toggleMic: () => void voice.toggle(), say: simulate },
+    { toggleMic: () => void voice.toggle(), holdMic: (d) => void voice.hold(d), say: simulate },
     PRESETS,
   );
 
@@ -239,7 +259,7 @@ export async function createGame(
     if (!r || !p) return;
     r.witch.trigger('cast');
     const at = new Vector3(r.state.x, r.state.y, r.state.z);
-    const ok = spells.cast(p, m.power, new Vector3(...m.origin), new Vector3(...m.aim), at);
+    const ok = spells.cast(p, m.power, new Vector3(...m.origin), new Vector3(...m.aim), at, false);
     if (!ok) {
       r.witch.trigger('fail');
       r.witch.setSoot(4);
@@ -296,11 +316,16 @@ export async function createGame(
   addEventListener('resize', resize);
   resize();
 
+  let castHeld = false;
   const loop = new FixedLoop({
     begin: (dt) => input.sample(dt),
     fixed: (step) => {
       const f = input.frame;
       if (f.micPressed) void voice.toggle();
+      if (f.castHeld !== castHeld) {
+        castHeld = f.castHeld;
+        void voice.hold(castHeld);
+      }
       if (f.debugPressed) events.emit('debug:changed', debug.toggle());
       if (f.sitPressed) witch.toggleSit();
       if (f.wavePressed) witch.trigger('wave');
@@ -350,7 +375,13 @@ export async function createGame(
       for (const [id, r] of remotes) r.update(dt, now, net?.buffers.get(id));
       spells.update(dt);
       dust.update(dt);
-      for (const d of dummies) d.update(dt);
+      zones.update(dt);
+      player.surface = player.grounded ? zones.surface(player.pos.x, player.pos.z) : null;
+      for (const d of dummies) {
+        d.surface = zones.surface(d.pos.x, d.pos.z);
+        d.update(dt, rig.camera);
+      }
+      popups.update(dt, rig.camera, innerWidth, innerHeight);
       world.sky.position.copy(rig.camera.position);
       world.sun.target.position.copy(player.renderPos);
       world.sun.position.copy(player.renderPos).add(SUN_OFFSET);

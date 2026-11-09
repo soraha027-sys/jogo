@@ -67,6 +67,7 @@ export class KeyboardMouse implements InputSource {
       (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
     f.jump ||= k.has('Space');
     f.sprint ||= k.has('ShiftLeft') || k.has('ShiftRight');
+    f.castHeld ||= k.has('KeyQ');
     f.lookX += this.dx * SENS;
     f.lookY += this.dy * SENS;
     this.dx = this.dy = 0;

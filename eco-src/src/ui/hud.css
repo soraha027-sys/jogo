@@ -548,3 +548,69 @@ body {
 #hud .online[data-status='erro'] b {
   background: #ff6a7a;
 }
+
+#hud .mic {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+#hud .mic.hold {
+  transform: scale(1.12);
+  background: rgba(180, 140, 255, 0.85);
+  box-shadow: 0 0 0 calc(6px + var(--level, 0) * 18px) rgba(180, 140, 255, 0.35);
+}
+#hud .mic.open::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff6a7a;
+}
+
+.popups {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.pop {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font:
+    800 16px/1 system-ui,
+    sans-serif;
+  color: #fff;
+  -webkit-text-stroke: 3px #1a1226;
+  paint-order: stroke fill;
+  white-space: nowrap;
+  will-change: transform;
+}
+.pop.big {
+  font-size: 19px;
+  letter-spacing: 0.06em;
+}
+.pop.burn {
+  color: #ffb050;
+}
+.pop.chill {
+  color: #bfeaff;
+}
+.pop.wet {
+  color: #6fb4ff;
+}
+.pop.push {
+  color: #c8ffe6;
+}
+.pop.pull {
+  color: #d8b0ff;
+}
+.pop.solid {
+  color: #f0e2c8;
+}
+.pop.steam {
+  color: #ffffff;
+}

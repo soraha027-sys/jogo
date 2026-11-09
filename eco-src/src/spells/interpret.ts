@@ -1,6 +1,10 @@
 import { decode, toWords, type Decoded, type Lexicon, type Morph } from './decode';
 import { plan, type SpellPlan } from './essence';
+import common from './data/comuns.json';
 import { normalize, toPhonemes } from './phonetics';
+
+/** Palavras comuns do português que soam como encantamento: no microfone aberto, nunca viram magia. */
+const COMMON = new Set<string>(common);
 
 /** Quão bem a fala ecoou na língua do jogo. */
 export type Echo = 'limpo' | 'fraco' | 'torto' | 'sem_forca' | 'sem_eco';
@@ -27,6 +31,8 @@ export interface InterpretOptions {
   rng: () => number;
   /** Falou baixo demais (medidor de volume no PC). */
   weak?: boolean;
+  /** Microfone aberto: aplica a lista de palavras comuns do português (que nunca viram magia). */
+  strict?: boolean;
 }
 
 /**
@@ -52,7 +58,15 @@ export function interpret(alts: Alt[], lex: Lexicon, o: InterpretOptions): Cast 
     }
   }
   const phonemes = toPhonemes(heard);
-  if (!best || best.cost > d.echo.bent) {
+  const shaped = (dec: Decoded): boolean => {
+    const pieces = dec.morphs.filter((m) => m.kind !== 'linker');
+    const ending = dec.words[0]?.ending ?? '';
+    const enough =
+      pieces.length >= d.rules.minMorphs ||
+      (pieces.length === 2 && d.rules.shortEndings.includes(ending));
+    return enough && dec.skips <= d.rules.maxSkips && !(o.strict && COMMON.has(normalize(heard)));
+  };
+  if (!best || best.cost > d.echo.bent || !shaped(best)) {
     if (phonemes.length < 4) return null; // ruído curto: ignora
     return {
       kind: 'spell',
@@ -65,8 +79,24 @@ export function interpret(alts: Alt[], lex: Lexicon, o: InterpretOptions): Cast 
     };
   }
 
+  // fraco = tudo meio borrado; torto = só UM pedaço escorregou e o resto saiu certo
+  const pieces = best.morphs.filter((m) => m.kind !== 'linker');
+  const off = pieces.filter((m) => m.cost > 0.15);
   let echo: Echo =
     best.cost <= d.echo.clean ? 'limpo' : best.cost <= d.echo.weak ? 'fraco' : 'torto';
+  if (echo === 'torto' && off.length !== 1) echo = 'sem_eco';
+  if (echo === 'fraco' && pieces.some((m) => m.cost > 0.6))
+    echo = off.length === 1 ? 'torto' : 'sem_eco';
+  if (echo === 'sem_eco')
+    return {
+      kind: 'spell',
+      echo,
+      plan: null,
+      morphs: best.morphs,
+      heard,
+      phonemes,
+      cost: best.cost,
+    };
   let morphs = best.morphs;
   if (echo === 'torto') {
     // o som mais torto escorrega pra outro morfema da mesma classe: sai outra magia

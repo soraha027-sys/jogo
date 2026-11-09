@@ -37,7 +37,7 @@ export class GamepadSource implements InputSource {
     f.sprint ||= down(B.sprint) || down(B.rt);
     f.jumpPressed ||= hit(B.jump);
     f.flyPressed ||= hit(B.fly);
-    f.micPressed ||= hit(B.mic);
+    f.castHeld ||= down(B.mic);
     f.debugPressed ||= hit(B.debug);
     f.sitPressed ||= hit(B.sit);
     f.wavePressed ||= hit(B.wave);

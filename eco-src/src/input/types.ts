@@ -12,6 +12,8 @@ export interface InputFrame {
   jumpPressed: boolean;
   flyPressed: boolean;
   micPressed: boolean;
+  /** Segurando o botão de falar magia (Q / X do controle). */
+  castHeld: boolean;
   debugPressed: boolean;
   sitPressed: boolean;
   wavePressed: boolean;
@@ -37,6 +39,7 @@ export function emptyFrame(): InputFrame {
     jumpPressed: false,
     flyPressed: false,
     micPressed: false,
+    castHeld: false,
     debugPressed: false,
     sitPressed: false,
     wavePressed: false,

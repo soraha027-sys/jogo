@@ -1,31 +1,64 @@
-import { BoxGeometry, Color, OctahedronGeometry, Vector3 } from 'three';
+import {
+  BoxGeometry,
+  Color,
+  CylinderGeometry,
+  Mesh,
+  MeshToonMaterial,
+  OctahedronGeometry,
+  Vector3,
+} from 'three';
 import type { Scene } from 'three';
-import { rayAabb, type Aabb } from '../physics/aabb';
+import { toonRamp } from '../art/toon';
+import { box, rayAabb, type Aabb } from '../physics/aabb';
 import { ParticlePool } from '../vfx/Particles';
 import { materialize, type Matter, type SpellPlan } from './essence';
+import { emptyImpact, impactOf, scaleImpact, type Impact } from './impact';
 import type { Lingua } from './lingua';
+import { applyImpact, tickStatus, type Reaction, type Status } from './status';
+import type { Zones } from './Zones';
 
+/** Quem pode ser atingido. */
 export interface Target {
-  pos: Vector3;
-  radius: number;
-  hit(color: Color): void;
+  readonly pos: Vector3;
+  readonly radius: number;
+  readonly status: Status;
+  readonly alive: boolean;
+  impulse(vx: number, vy: number, vz: number): void;
+  flash(color: Color): void;
 }
 
-/** Um corpo de feitiço em execução: devolve false quando acaba. */
+export interface SpellHooks {
+  popup(text: string, at: Vector3, kind: string, big?: boolean): void;
+  /** Mana roubada volta pra quem lançou (só a própria bruxa). */
+  drain(amount: number): void;
+  /** Coice do jato de vento: impulso na própria bruxa. */
+  recoil(v: Vector3): void;
+}
+
 type Active = (dt: number) => boolean;
-/** Onde a infusão (2ª palavra) nasce: cada forma chama isso nos seus pontos de efeito. */
 type Sub = ((at: Vector3) => void) | null;
+type Mode = 'out' | 'dir' | 'in';
 
 interface Cfg {
   m: Matter;
-  /** Matéria da infusão: tinge parte das partículas do corpo. */
   tint: Matter | null;
+  imp: Impact;
   scale: number;
   dur: number;
   speed: number;
   sky: boolean;
   jitter: number;
   sub: Sub;
+  /** Onde quem lançou estava (matéria do projétil puxa pra lá). */
+  caster: Vector3;
+  self: boolean;
+}
+
+interface Pillar {
+  mesh: Mesh;
+  collider: Aabb;
+  life: number;
+  height: number;
 }
 
 const SMOKE: Matter = {
@@ -44,6 +77,14 @@ const SMOKE: Matter = {
   spiral: 0,
   burst: 1,
 };
+const STEAM: Matter = {
+  ...SMOKE,
+  gravity: -0.8,
+  drag: 1.4,
+  size: 0.55,
+  life: 1.8,
+  colors: [new Color(0xf2f6fa), new Color(0xdfe7ee), new Color(0xffffff)],
+};
 const SPARK: Matter = {
   ...SMOKE,
   gravity: -1,
@@ -53,37 +94,66 @@ const SPARK: Matter = {
   stretch: 2,
   colors: [new Color(0xffe9a8), new Color(0xffffff)],
 };
+const REACTION_KIND: Record<Reaction, string> = {
+  congelou: 'chill',
+  vapor: 'steam',
+  estilhaçou: 'solid',
+  derreteu: 'wet',
+  apagou: 'wet',
+  espalhou: 'burn',
+  secou: 'burn',
+};
 const UP = new Vector3(0, 1, 0);
 const v = new Vector3();
 const rnd = (): number => Math.random() * 2 - 1;
 
 /**
- * Executa magias. Não existe lista de poderes: cada forma (terminação) é um emissor genérico,
- * e a matéria que ele emite sai da essência das raízes. A 2ª palavra vira um sub-feitiço
- * que nasce nos pontos de efeito da 1ª.
+ * Executa magias. Não há poderes cadastrados: a forma (terminação) decide COMO a magia chega,
+ * as raízes decidem a matéria (visual) e o impacto (o que faz), e os estados de quem é atingido
+ * reagem entre si. A 2ª palavra vira um sub-feitiço que nasce nos pontos de efeito da 1ª.
  */
 export class SpellSystem {
   mana: number;
-  private readonly octa = new ParticlePool(new OctahedronGeometry(0.5, 0), 1300);
-  private readonly cube = new ParticlePool(new BoxGeometry(0.8, 0.8, 0.8), 700);
+  private readonly octa = new ParticlePool(new OctahedronGeometry(0.5, 0), 1600);
+  private readonly cube = new ParticlePool(new BoxGeometry(0.8, 0.8, 0.8), 800);
   private active: Active[] = [];
+  private readonly pillars: Pillar[] = [];
+  private readonly fire: Matter;
+  private readonly water: Matter;
+  private readonly frost: Matter;
+  private fxAcc = 0;
 
   constructor(
     private readonly data: Lingua,
-    scene: Scene,
-    private readonly colliders: readonly Aabb[],
+    private readonly scene: Scene,
+    private readonly colliders: Aabb[],
     private readonly targets: readonly Target[],
+    private readonly zones: Zones,
+    private readonly hooks: SpellHooks,
   ) {
     this.mana = data.manaMax;
     scene.add(this.octa.mesh, this.cube.mesh);
+    this.fire = materialize(data.roots.pir?.essence ?? []);
+    this.water = materialize(data.roots.lav?.essence ?? []);
+    this.frost = materialize(data.roots.gel?.essence ?? []);
   }
 
   update(dt: number): void {
     this.mana = Math.min(this.data.manaMax, this.mana + this.data.manaRegen * dt);
     this.active = this.active.filter((fn) => fn(dt));
+    for (const t of this.targets) {
+      if (!t.alive) continue;
+      const burn = tickStatus(t.status, dt, this.data);
+      if (burn > 0 && Math.random() < dt * 3)
+        this.hooks.popup(String(Math.round(burn * 8)), t.pos.clone().setY(1.8), 'burn');
+    }
+    this.statusFx(dt);
+    this.updatePillars(dt);
     this.octa.update(dt);
     this.cube.update(dt);
   }
+
+  // ---------- partículas ----------
 
   private emit(
     m: Matter,
@@ -119,7 +189,6 @@ export class SpellSystem {
     );
   }
 
-  /** Partícula do corpo: às vezes já sai com a matéria da infusão. */
   private body(
     c: Cfg,
     x: number,
@@ -154,7 +223,16 @@ export class SpellSystem {
     );
   }
 
-  private burst(c: Cfg, p: Vector3, n: number, speed: number, size = 1): void {
+  private burst(m: Matter, p: Vector3, n: number, speed: number, size = 1): void {
+    for (let i = 0; i < n; i++) {
+      v.set(rnd(), rnd() * 0.6 + 0.5, rnd())
+        .normalize()
+        .multiplyScalar(speed * (0.4 + Math.random()));
+      this.emit(m, p.x, p.y, p.z, v.x, v.y, v.z, size, 1.2, p.x, p.y, p.z);
+    }
+  }
+
+  private burstCfg(c: Cfg, p: Vector3, n: number, speed: number, size = 1): void {
     for (let i = 0; i < n; i++) {
       v.set(rnd(), rnd() * 0.6 + 0.5, rnd())
         .normalize()
@@ -163,16 +241,6 @@ export class SpellSystem {
     }
   }
 
-  private impact(c: Cfg, x: number, y: number, z: number, r: number): void {
-    const color = c.m.colors[0];
-    if (!color) return;
-    for (const t of this.targets) {
-      const dy = Math.max(0, Math.abs(t.pos.y + 1 - y) - 1);
-      if (Math.hypot(t.pos.x - x, t.pos.z - z, dy) < r + t.radius) t.hit(color);
-    }
-  }
-
-  /** Fumaça e fuligem. */
   smoke(p: Vector3, n = 70, speed = 7): void {
     for (let i = 0; i < n; i++) {
       v.set(rnd(), rnd() * 0.7 + 0.3, rnd())
@@ -182,54 +250,223 @@ export class SpellSystem {
     }
   }
 
-  /**
-   * Lança a magia. `power` < 1 = eco fraco. Devolve false se ela estourou na mão
-   * (essências opostas sem "ko").
-   */
-  cast(plan: SpellPlan, power: number, origin: Vector3, aim: Vector3, center: Vector3): boolean {
+  /** Fogo, gotas e geada saindo de quem está com o estado, e das zonas no chão. */
+  private statusFx(dt: number): void {
+    this.fxAcc += dt;
+    if (this.fxAcc < 1 / 30) return;
+    const h = this.fxAcc;
+    this.fxAcc = 0;
+    const chance = (rate: number): boolean => Math.random() < rate * h;
+    for (const t of this.targets) {
+      if (!t.alive) continue;
+      const s = t.status;
+      const p = t.pos;
+      if (s.burning > 0)
+        for (let i = 0; i < 2; i++)
+          if (chance(14))
+            this.emit(
+              this.fire,
+              p.x + rnd() * 0.3,
+              0.4 + Math.random() * 1.5,
+              p.z + rnd() * 0.3,
+              rnd() * 0.4,
+              2.5,
+              rnd() * 0.4,
+              0.8,
+              0.8,
+            );
+      if (s.wet > 0 && chance(8))
+        this.emit(
+          this.water,
+          p.x + rnd() * 0.3,
+          0.6 + Math.random() * 1.2,
+          p.z + rnd() * 0.3,
+          0,
+          -1,
+          0,
+          0.5,
+          0.6,
+        );
+      if (s.chill > 0 && chance(4 * s.chill))
+        this.emit(
+          this.frost,
+          p.x + rnd() * 0.4,
+          0.3 + Math.random() * 1.6,
+          p.z + rnd() * 0.4,
+          0,
+          0.3,
+          0,
+          0.5,
+          0.7,
+        );
+    }
+    for (const z of this.zones.list) {
+      const area = z.r * z.r;
+      if (z.kind === 'fogo' && chance(10 * area)) {
+        const a = Math.random() * Math.PI * 2;
+        const d = Math.sqrt(Math.random()) * z.r;
+        this.emit(
+          this.fire,
+          z.x + Math.cos(a) * d,
+          0.1,
+          z.z + Math.sin(a) * d,
+          0,
+          2 + Math.random() * 2,
+          0,
+          0.8,
+          0.7,
+        );
+      } else if (z.kind === 'vapor' && chance(9 * area)) {
+        const a = Math.random() * Math.PI * 2;
+        const d = Math.sqrt(Math.random()) * z.r;
+        this.emit(
+          STEAM,
+          z.x + Math.cos(a) * d,
+          0.3 + Math.random() * 1.6,
+          z.z + Math.sin(a) * d,
+          rnd() * 0.4,
+          0.4,
+          rnd() * 0.4,
+          1.6,
+          1,
+        );
+      }
+    }
+    // zonas também atingem quem está nelas
+    for (const t of this.targets) {
+      if (!t.alive) continue;
+      if (this.zones.at(t.pos.x, t.pos.z, 'fogo') && t.status.burning < 0.5)
+        applyImpact(t.status, { ...emptyImpact(), burn: 0.5 }, this.data);
+      if (this.zones.at(t.pos.x, t.pos.z, 'poca')) t.status.wet = Math.max(t.status.wet, 1.5);
+    }
+  }
+
+  // ---------- acerto ----------
+
+  /** Aplica o impacto num alvo: estado + reações + empurrão + números na tela. */
+  private strike(c: Cfg, t: Target, k: number, from: Vector3, mode: Mode, dir?: Vector3): void {
+    if (!t.alive || k <= 0) return;
+    const cs = this.data.combat;
+    const imp = scaleImpact(c.imp, k);
+    const res = applyImpact(t.status, imp, this.data);
+    const p = t.pos;
+
+    // direção do empurrão: pra fora do centro, na direção do golpe, ou pra dentro
+    const away = v.set(p.x - from.x, 0, p.z - from.z);
+    if (away.lengthSq() < 1e-4) away.set(rnd(), 0, rnd());
+    away.normalize();
+    const along = mode === 'dir' && dir ? new Vector3(dir.x, 0, dir.z).normalize() : away.clone();
+    const sign = mode === 'in' ? -1 : 1;
+    const push = imp.push * cs.pushSpeed + imp.solid * 1.5;
+    const toCaster = new Vector3(c.caster.x - p.x, 0, c.caster.z - p.z);
+    const pullTo = mode === 'dir' ? toCaster.normalize() : away.clone().multiplyScalar(-1);
+    const pull = imp.pull * cs.pullSpeed;
+    t.impulse(
+      along.x * push * sign + pullTo.x * pull,
+      imp.lift * cs.liftSpeed - imp.slam * 9,
+      along.z * push * sign + pullTo.z * pull,
+    );
+    t.flash(c.m.colors[0] ?? SPARK.colors[0] ?? new Color());
+
+    const head = p.clone().setY(2);
+    if (res.damage >= 1)
+      this.hooks.popup(String(Math.round(res.damage)), head, kindOf(imp), res.damage > 30);
+    for (const r of res.reactions) this.reaction(r, t);
+    if (c.self && imp.drain > 0.05 && res.damage > 0) this.hooks.drain(res.damage * 0.35);
+  }
+
+  private reaction(r: Reaction, t: Target): void {
+    const at = t.pos.clone().setY(1.2);
+    this.hooks.popup(r.toUpperCase(), at.clone().setY(2.6), REACTION_KIND[r], true);
+    if (r === 'vapor') {
+      this.zones.add('vapor', t.pos.x, t.pos.z, 2.2);
+      this.burst(STEAM, at, 40, 4, 1.4);
+    } else if (r === 'congelou') this.burst(this.frost, at, 30, 4, 0.9);
+    else if (r === 'estilhaçou') this.burst(this.frost, at, 60, 9, 1.2);
+    else if (r === 'derreteu' || r === 'apagou') this.burst(STEAM, at, 18, 3);
+    else if (r === 'espalhou')
+      for (const o of this.targets) {
+        if (o === t || !o.alive || o.pos.distanceTo(t.pos) > 3.8) continue;
+        o.status.burning = Math.max(o.status.burning, this.data.combat.burnSeconds);
+        this.hooks.popup('ESPALHOU', o.pos.clone().setY(2.6), 'burn', true);
+        const line = o.pos.clone().sub(t.pos);
+        for (let i = 0; i < 12; i++) {
+          const q = t.pos.clone().addScaledVector(line, i / 12);
+          this.emit(this.fire, q.x, 1, q.z, 0, 2, 0, 0.8, 0.6);
+        }
+      }
+  }
+
+  private area(
+    c: Cfg,
+    x: number,
+    y: number,
+    z: number,
+    r: number,
+    k: number,
+    mode: Mode,
+    dir?: Vector3,
+    once?: Set<Target>,
+  ): void {
+    const center = new Vector3(x, y, z);
+    for (const t of this.targets) {
+      if (!t.alive || once?.has(t)) continue;
+      const dy = Math.max(0, Math.abs(t.pos.y + 1 - y) - 1.2);
+      if (Math.hypot(t.pos.x - x, t.pos.z - z, dy) > r + t.radius) continue;
+      once?.add(t);
+      this.strike(c, t, k, center, mode, dir);
+    }
+  }
+
+  /** O que a magia deixa no chão onde ela cai. */
+  private ground(c: Cfg, x: number, z: number, r: number, lingering: boolean): void {
+    const i = c.imp;
+    if (i.burn > 0.3) this.zones.react('burn', x, z, r);
+    if (i.chill > 0.3) this.zones.react('chill', x, z, r);
+    if (i.wet > 0.3) this.zones.react('wet', x, z, r);
+    if (!lingering) return;
+    if (i.wet > 0.4 && i.chill > 0.4) this.zones.add('gelo', x, z, r);
+    else if (i.wet > 0.4) this.zones.add('poca', x, z, r);
+    else if (i.burn > 0.6) this.zones.add('fogo', x, z, r * 0.8);
+    else if (i.chill > 0.7) this.zones.add('gelo', x, z, r * 0.7);
+  }
+
+  // ---------- lançar ----------
+
+  /** `self`: foi a própria bruxa (rouba mana, sente o coice). Devolve false se estourou na mão. */
+  cast(
+    plan: SpellPlan,
+    power: number,
+    origin: Vector3,
+    aim: Vector3,
+    center: Vector3,
+    self = true,
+  ): boolean {
     const m = materialize(plan.body.essence);
     const m2 = plan.infusion ? materialize(plan.infusion.essence) : null;
     const dir = aim.clone().normalize();
+    const imp = scaleImpact(impactOf(plan, this.data), power * plan.power);
 
     if (plan.state === 'instavel') {
       const c: Cfg = {
         m,
         tint: m2,
+        imp,
         scale: 1.2,
         dur: 1,
         speed: 1,
         sky: false,
         jitter: 1,
         sub: null,
+        caster: center.clone(),
+        self,
       };
-      this.burst(c, origin, 46, 9);
+      this.burstCfg(c, origin, 46, 9);
       this.smoke(origin, 40);
+      this.area(c, origin.x, origin.y, origin.z, 2.5, 0.6, 'out');
       return false;
     }
-    if (!plan.body.shape) {
-      // sem terminação a essência não toma forma: escorre da mão
-      const c: Cfg = {
-        m,
-        tint: m2,
-        scale: 0.7,
-        dur: 1,
-        speed: 1,
-        sky: false,
-        jitter: 0.2,
-        sub: null,
-      };
-      for (let i = 0; i < 14; i++)
-        this.body(
-          c,
-          origin.x,
-          origin.y,
-          origin.z,
-          dir.x * 1.5 + rnd(),
-          1 + rnd(),
-          dir.z * 1.5 + rnd(),
-        );
-      return true;
-    }
+    if (!plan.body.shape) return true;
 
     const turbulent = plan.state === 'turbulento';
     const dur = (plan.state === 'harmonico' ? 1.15 : turbulent ? 0.75 : 1) * power;
@@ -240,34 +477,46 @@ export class SpellSystem {
     }
     for (let e = 0; e < plan.echoes; e++) {
       const scale = plan.scale * power * plan.power * ([1, 0.7, 0.5][e] ?? 0.4);
+      const echoImp = scaleImpact(imp, [1, 0.6, 0.4][e] ?? 0.3);
       const sub: Sub =
         inf && m2
           ? (at) => {
+              const subPlan = { ...plan, body: inf, infusion: null };
               const c2: Cfg = {
                 m: m2,
                 tint: null,
+                imp: scaleImpact(impactOf(subPlan, this.data), 0.5 * power),
                 scale: scale * 0.55,
                 dur: dur * 0.7,
                 speed: 1,
                 sky: false,
                 jitter: 0,
                 sub: null,
+                caster: center.clone(),
+                self,
               };
-              if (!inf.shape) return this.burst(c2, at, 22, 5, 1.6);
+              if (!inf.shape) {
+                this.burstCfg(c2, at, 22, 5, 1.6);
+                this.area(c2, at.x, at.y, at.z, 1.6, 1, 'out');
+                return;
+              }
               const d = new Vector3(rnd(), 0.25, rnd()).normalize();
               const o = at.clone().setY(at.y + 0.3);
-              this.spawn(inf.shape, c2, o, d, o); // origem = centro: nasce no próprio ponto
+              this.spawn(inf.shape, c2, o, d, o);
             }
           : null;
       const c: Cfg = {
         m,
         tint: m2,
+        imp: echoImp,
         scale,
         dur,
         speed: plan.speed,
         sky: plan.fromAbove,
         jitter: turbulent ? 1 : 0,
         sub,
+        caster: center.clone(),
+        self,
       };
       const go = (): void => this.spawn(plan.body.shape ?? '', c, origin.clone(), dir, center);
       if (e === 0) go();
@@ -282,8 +531,9 @@ export class SpellSystem {
   }
 
   private spawn(shape: string, c: Cfg, origin: Vector3, dir: Vector3, center: Vector3): void {
+    const atSelf = center === origin;
     const ahead = (d: number): Vector3 =>
-      new Vector3(center.x + dir.x * d, 0, center.z + dir.z * d);
+      atSelf ? center.clone().setY(0) : new Vector3(center.x + dir.x * d, 0, center.z + dir.z * d);
     switch (shape) {
       case 'projectile': {
         if (c.sky) {
@@ -294,25 +544,26 @@ export class SpellSystem {
         break;
       }
       case 'vortex':
-        this.active.push(this.vortex(c, ahead(center === origin ? 0 : 4.5), dir));
+        this.active.push(this.vortex(c, ahead(4.5), dir));
         break;
       case 'wave':
         this.active.push(this.wave(c, center.clone().setY(0)));
         break;
       case 'pillar':
-        this.active.push(this.pillar(c, ahead(center === origin ? 0 : 5)));
+        this.active.push(this.pillar(c, ahead(5)));
         break;
       case 'jet':
         this.active.push(this.jet(c, origin, dir));
         break;
       case 'rain':
-        this.active.push(this.rain(c, ahead(center === origin ? 0 : 7)));
+        this.active.push(this.rain(c, ahead(7)));
         break;
     }
   }
 
+  /** -or: rápido, acerta UM alvo em cheio; o resto em volta só respinga. Matéria puxa o alvo pra quem lançou. */
   private projectile(c: Cfg, pos: Vector3, dir: Vector3): Active {
-    const vel = dir.clone().multiplyScalar(c.m.speed * c.speed * (c.sky ? 1.6 : 1));
+    const vel = dir.clone().multiplyScalar(c.m.speed * c.speed * (c.sky ? 1.6 : 1) * 1.2);
     const side = new Vector3().crossVectors(dir, UP).normalize();
     let t = 0;
     let dist = 0;
@@ -329,18 +580,24 @@ export class SpellSystem {
           rayAabb(pos.x, pos.y, pos.z, vel.x / speed, vel.y / speed, vel.z / speed, b, step) < step
         )
           hit = true;
+      let victim: Target | null = null;
+      for (const tg of this.targets)
+        if (
+          tg.alive &&
+          Math.hypot(tg.pos.x - pos.x, tg.pos.z - pos.z) < tg.radius + 0.3 * c.scale &&
+          pos.y < tg.pos.y + 2.1
+        )
+          victim = tg;
+      if (victim) hit = true;
       pos.addScaledVector(vel, dt);
       dist += step;
       const s = c.m.spiral * 0.4 * c.scale;
-      const ox = side.x * Math.cos(t * 16) * s;
-      const oy = Math.sin(t * 16) * s;
-      const oz = side.z * Math.cos(t * 16) * s;
       for (acc += dt * 150; acc >= 1; acc--)
         this.body(
           c,
-          pos.x + ox + rnd() * 0.08,
-          pos.y + oy + rnd() * 0.08,
-          pos.z + oz + rnd() * 0.08,
+          pos.x + side.x * Math.cos(t * 16) * s + rnd() * 0.08,
+          pos.y + Math.sin(t * 16) * s + rnd() * 0.08,
+          pos.z + side.z * Math.cos(t * 16) * s + rnd() * 0.08,
           vel.x * 0.08 + rnd(),
           vel.y * 0.08 + rnd(),
           vel.z * 0.08 + rnd(),
@@ -352,14 +609,20 @@ export class SpellSystem {
         );
       if (!hit) return true;
       pos.y = Math.max(pos.y, 0.15);
-      this.burst(c, pos, Math.round(38 * c.scale * c.m.burst), 5 + 3 * c.scale, 1.1);
-      this.impact(c, pos.x, pos.y, pos.z, 1.2 + c.scale * c.m.burst * 0.6);
+      this.burstCfg(c, pos, Math.round(38 * c.scale * c.m.burst), 5 + 3 * c.scale, 1.1);
+      const hitSet = new Set<Target>();
+      if (victim) {
+        hitSet.add(victim);
+        this.strike(c, victim, 1, pos, 'dir', dir);
+      }
+      this.area(c, pos.x, pos.y, pos.z, 1 + c.scale * 0.6, 0.35, 'out', undefined, hitSet);
+      this.ground(c, pos.x, pos.z, 1.1 * c.scale, true);
       c.sub?.(pos);
       return false;
     };
   }
 
-  /** Funil que gira e anda devagar pra frente; do alto, desce do céu. */
+  /** -us: funil que fica, puxa pra dentro e (com vento) levanta. Tique a cada 0,35 s. */
   private vortex(c: Cfg, p: Vector3, dir: Vector3): Active {
     const kin: Matter = {
       ...c.m,
@@ -369,10 +632,12 @@ export class SpellSystem {
       drag: Math.min(c.m.drag, 0.9),
     };
     const H = 3.4 * c.scale;
+    const R = 1.7 * c.scale;
     const drift = 1.2 + Math.max(0, c.m.speed - 10) * 0.12;
     let t = 0;
     let acc = 0;
-    let tick = 0.4;
+    let tick = 0.2;
+    let groundAt = 0;
     return (dt) => {
       t += dt;
       p.addScaledVector(dir, drift * dt);
@@ -399,19 +664,35 @@ export class SpellSystem {
           kin,
         );
       }
-      if ((tick += dt) > 0.9) {
+      if ((tick += dt) > 0.35) {
         tick = 0;
-        this.impact(c, p.x, 1, p.z, 1.3 * c.scale);
-        c.sub?.(p);
+        for (const tg of this.targets) {
+          if (!tg.alive || Math.hypot(tg.pos.x - p.x, tg.pos.z - p.z) > R + tg.radius) continue;
+          this.strike(c, tg, 0.3, p, 'in');
+          // o funil em si: arrasta pra dentro, gira e (com empurrão de vento) ergue
+          const to = new Vector3(p.x - tg.pos.x, 0, p.z - tg.pos.z);
+          const tangent = new Vector3(-to.z, 0, to.x).normalize();
+          tg.impulse(to.x * 1.5 + tangent.x * 2, c.imp.push * 2.5, to.z * 1.5 + tangent.z * 2);
+        }
+      }
+      if ((groundAt -= dt) <= 0) {
+        groundAt = 0.8;
+        this.ground(c, p.x, p.z, R * 0.7, false);
+        c.sub?.(p.clone().setY(1));
       }
       return t < 4.2 * c.dur;
     };
   }
 
+  /** -a: anel que sai da bruxa e empurra tudo pra longe (cada alvo uma vez). */
   private wave(c: Cfg, p: Vector3): Active {
     let t = 0;
     let acc = 0;
     const max = 8 * Math.sqrt(c.scale);
+    const hit = new Set<Target>();
+    const kind = c.imp;
+    // a onda sempre empurra um pouco, mesmo sem vento
+    const cw: Cfg = { ...c, imp: { ...kind, push: Math.max(kind.push, 0.5) } };
     return (dt) => {
       t += dt / 0.9;
       const r = 0.6 + t * max;
@@ -432,8 +713,15 @@ export class SpellSystem {
           p.z,
         );
       }
-      this.impact(c, p.x, 1, p.z, r);
+      for (const tg of this.targets) {
+        if (!tg.alive || hit.has(tg)) continue;
+        if (Math.abs(Math.hypot(tg.pos.x - p.x, tg.pos.z - p.z) - r) < 0.9) {
+          hit.add(tg);
+          this.strike(cw, tg, 0.8, p, 'out');
+        }
+      }
       if (t < 1) return true;
+      this.ground(c, p.x, p.z, max * 0.55, true);
       for (let i = 0; i < 3; i++) {
         const a = Math.random() * Math.PI * 2;
         c.sub?.(new Vector3(p.x + Math.cos(a) * r, 0.1, p.z + Math.sin(a) * r));
@@ -442,14 +730,27 @@ export class SpellSystem {
     };
   }
 
+  /**
+   * -um: brota do chão e lança quem estiver em cima. Se a essência é sólida (pedra, gelo),
+   * vira objeto de verdade: bloqueia e dá pra subir. Senão é uma coluna que fere quem encosta.
+   */
   private pillar(c: Cfg, p: Vector3): Active {
     let t = 0;
     let acc = 0;
-    let tick = 1;
+    let tick = 0;
     const r = 0.7 * c.scale;
+    const solid = c.imp.solid > 0.4 || (c.imp.chill > 0.5 && c.imp.burn < 0.2);
+    // erupção: quem estiver no lugar vai pro alto
+    for (const tg of this.targets) {
+      if (!tg.alive || Math.hypot(tg.pos.x - p.x, tg.pos.z - p.z) > r + 0.6) continue;
+      this.strike(c, tg, 0.8, p, 'out');
+      tg.impulse(0, 9 + 3 * c.scale, 0);
+    }
+    if (solid) this.raisePillar(c, p, r);
     return (dt) => {
       t += dt;
-      for (acc += dt * 170 * Math.min(2, c.scale); acc >= 1; acc--) {
+      const n = solid ? 60 : 170;
+      for (acc += dt * n * Math.min(2, c.scale); acc >= 1; acc--) {
         const a = Math.random() * Math.PI * 2;
         const d = Math.sqrt(Math.random()) * r;
         const up = (9 + Math.random() * 7) * Math.sqrt(c.scale);
@@ -462,23 +763,70 @@ export class SpellSystem {
           c.sky ? -up : up,
           rnd() * 0.7,
           1,
-          1.1,
+          solid ? 0.5 : 1.1,
           p.x,
           3,
           p.z,
         );
       }
-      if ((tick += dt) > 0.3) {
+      if ((tick += dt) > 0.4) {
         tick = 0;
-        this.impact(c, p.x, 1, p.z, r + 0.6);
+        this.area(c, p.x, 1, p.z, r + 0.4, 0.25, 'out');
       }
-      if (t < 1.4 * c.dur) return true;
+      if (t < (solid ? 0.5 : 1.4 * c.dur)) return true;
+      this.ground(c, p.x, p.z, r * 1.6, true);
       c.sub?.(new Vector3(p.x, 3.2 * c.scale, p.z));
       return false;
     };
   }
 
-  /** Jato contínuo saindo da mão. */
+  private raisePillar(c: Cfg, p: Vector3, r: number): void {
+    const height = 2.2 + 1.2 * c.scale;
+    const color = c.m.colors[0] ?? new Color(0x8a7a6a);
+    const ice = c.imp.chill > c.imp.solid;
+    const mat = new MeshToonMaterial({
+      color,
+      gradientMap: toonRamp(),
+      transparent: ice,
+      opacity: ice ? 0.85 : 1,
+    });
+    const mesh = new Mesh(
+      new CylinderGeometry(r * 0.85, r, height, 6).translate(0, height / 2, 0),
+      mat,
+    );
+    mesh.position.set(p.x, -height, p.z);
+    mesh.castShadow = mesh.receiveShadow = true;
+    this.scene.add(mesh);
+    const collider = box(p.x, p.z, r * 1.6, r * 1.6, 0, height);
+    collider.maxY = -1; // só fica sólido quando terminar de subir
+    this.colliders.push(collider);
+    this.pillars.push({ mesh, collider, life: 7 * c.dur + 0.5, height });
+  }
+
+  private updatePillars(dt: number): void {
+    for (let i = this.pillars.length - 1; i >= 0; i--) {
+      const pl = this.pillars[i];
+      if (!pl) continue;
+      pl.life -= dt;
+      const y = pl.mesh.position.y;
+      if (pl.life > 0.5) {
+        pl.mesh.position.y = Math.min(0, y + dt * pl.height * 7);
+        if (pl.mesh.position.y >= 0) pl.collider.maxY = pl.height;
+      } else {
+        pl.collider.maxY = -1;
+        pl.mesh.position.y = y - dt * pl.height * 2;
+      }
+      if (pl.life <= 0) {
+        this.scene.remove(pl.mesh);
+        pl.mesh.geometry.dispose();
+        (pl.mesh.material as MeshToonMaterial).dispose();
+        this.colliders.splice(this.colliders.indexOf(pl.collider), 1);
+        this.pillars.splice(i, 1);
+      }
+    }
+  }
+
+  /** -ar: jato contínuo; vento dá coice em quem lança (impulso pra trás). */
   private jet(c: Cfg, origin: Vector3, dir: Vector3): Active {
     let t = 0;
     let acc = 0;
@@ -489,6 +837,13 @@ export class SpellSystem {
     const reach = Math.min(c.sky ? 12 : 11, speed * 0.55) * Math.sqrt(c.scale);
     const end = from.clone().addScaledVector(d, reach);
     end.y = Math.max(0.1, end.y);
+    if (c.self && c.imp.push > 0.3 && !c.sky)
+      this.hooks.recoil(
+        dir
+          .clone()
+          .multiplyScalar(-c.imp.push * 11)
+          .setY(2 + c.imp.lift * 3),
+      );
     return (dt) => {
       t += dt;
       for (acc += dt * 230; acc >= 1; acc--) {
@@ -505,29 +860,34 @@ export class SpellSystem {
           0.75,
         );
       }
-      if ((tick += dt) > 0.25) {
+      if ((tick += dt) > 0.15) {
         tick = 0;
-        for (let k = 0.25; k <= 1; k += 0.25)
-          this.impact(
-            c,
-            from.x + (end.x - from.x) * k,
-            from.y + (end.y - from.y) * k,
-            from.z + (end.z - from.z) * k,
-            0.9 * c.scale,
-          );
+        for (const tg of this.targets) {
+          if (!tg.alive) continue;
+          // distância do alvo ao segmento do jato
+          const ap = tg.pos.clone().setY(1).sub(from);
+          const seg = end.clone().sub(from);
+          const k = Math.max(0, Math.min(1, ap.dot(seg) / seg.lengthSq()));
+          const closest = from.clone().addScaledVector(seg, k);
+          if (closest.distanceTo(tg.pos.clone().setY(1)) < 0.9 * Math.sqrt(c.scale) + tg.radius)
+            this.strike(c, tg, 0.18, from, 'dir', d);
+        }
       }
       if (t < 1.5 * c.dur) return true;
+      this.ground(c, end.x, end.z, 1.2 * c.scale, true);
       c.sub?.(end);
       return false;
     };
   }
 
+  /** -ia: chuva sobre uma área, com atraso; deixa poça, gelo ou fogo no chão. */
   private rain(c: Cfg, p: Vector3): Active {
     let t = 0;
     let acc = 0;
-    let tick = 0;
+    let tick = -0.4;
     let subs = 0;
     const r = 3.2 * Math.sqrt(c.scale) * (c.sky ? 1.5 : 1);
+    let marked = false;
     return (dt) => {
       t += dt;
       for (acc += dt * 95 * Math.min(2.2, c.scale) * (c.sky ? 1.6 : 1); acc >= 1; acc--) {
@@ -545,9 +905,13 @@ export class SpellSystem {
           2,
         );
       }
-      if ((tick += dt) > 0.45) {
+      if ((tick += dt) > 0.4) {
         tick = 0;
-        this.impact(c, p.x, 1, p.z, r);
+        if (!marked) {
+          marked = true;
+          this.ground(c, p.x, p.z, r, true);
+        }
+        this.area(c, p.x, 1, p.z, r, 0.22, 'out');
         if (subs++ < 4 && t > 0.6) {
           const a = Math.random() * Math.PI * 2;
           c.sub?.(new Vector3(p.x + Math.cos(a) * r * 0.6, 0.1, p.z + Math.sin(a) * r * 0.6));
@@ -556,4 +920,18 @@ export class SpellSystem {
       return t < 3.2 * c.dur;
     };
   }
+}
+
+/** Cor do número na tela pelo elemento dominante. */
+function kindOf(i: Impact): string {
+  const pairs: [string, number][] = [
+    ['burn', i.burn],
+    ['chill', i.chill],
+    ['wet', i.wet],
+    ['push', i.push],
+    ['pull', i.pull],
+    ['solid', i.solid],
+  ];
+  pairs.sort((a, b) => b[1] - a[1]);
+  return pairs[0]?.[1] ? (pairs[0]?.[0] ?? 'solid') : 'solid';
 }

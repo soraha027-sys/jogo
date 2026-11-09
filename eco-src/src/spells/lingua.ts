@@ -8,6 +8,8 @@ interface Morpheme {
 export interface RootDef extends Morpheme {
   /** heat, mass, flow, bond, glow, warp — cada eixo de -1 a 1. */
   essence: number[];
+  /** O que a raiz FAZ no alvo (ver `Impact`). */
+  verbs: Record<string, number>;
 }
 export interface EndingDef extends Morpheme {
   shape: string;
@@ -23,7 +25,29 @@ export interface Lingua {
   rootWeights: number[];
   tension: { turbulent: number; unstable: number };
   echo: { clean: number; weak: number; bent: number };
+  /**
+   * O que faz uma fala ser encantamento e não conversa:
+   * pelo menos `minMorphs` peças (prefixo/raiz/terminação), ou só raiz + uma das `shortEndings`;
+   * no máximo `maxSkips` sons sobrando. (Microfone aberto ainda ignora `comuns.json`.)
+   */
+  rules: { minMorphs: number; shortEndings: string[]; maxSkips: number };
   commands: Record<string, string[]>;
+  /** Pares que `la-` troca e que se anulam quando misturados sem `ko-`. */
+  opposites: Record<string, string>;
+  /** Números do combate (vida, durações, velocidades). */
+  combat: {
+    hp: number;
+    damageUnit: number;
+    burnSeconds: number;
+    burnDps: number;
+    wetSeconds: number;
+    chillToFreeze: number;
+    freezeSeconds: number;
+    stunSeconds: number;
+    pushSpeed: number;
+    pullSpeed: number;
+    liftSpeed: number;
+  };
   weakConfidence: number;
   weakVolume: number;
   manaMax: number;

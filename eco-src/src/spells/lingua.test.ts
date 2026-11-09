@@ -70,19 +70,56 @@ describe('o microfone entende a língua do jogo', () => {
     }));
 });
 
+describe('só encantamento vira magia', () => {
+  const magic = (t: string, strict = false): boolean => {
+    const c = interpret([{ text: t, confidence: 0.9 }], lex, { rng: () => 0, strict });
+    return c?.kind === 'spell' && c.echo !== 'sem_eco';
+  };
+  it('fala comum não conjura', () => {
+    for (const t of [
+      'bom dia',
+      'vamos lá',
+      'cara',
+      'agora',
+      'terra',
+      'lava',
+      'correr',
+      'pirar',
+      'terror',
+      'que calor',
+      'olha ali',
+      'vem cá',
+      'cor',
+    ])
+      expect(magic(t), t).toBe(false);
+  });
+  it('palavra sem terminação não é encantamento', () => expect(magic('ventigel')).toBe(false));
+  it('curta só com -us; o resto precisa de 3 peças', () => {
+    expect(magic('ventus')).toBe(true);
+    expect(magic('gelor')).toBe(false);
+    expect(magic('magelor')).toBe(true);
+    expect(magic('pirigelor')).toBe(true);
+  });
+  it('microfone aberto ignora palavras comuns que soam como magia; segurando, valem', () => {
+    expect(magic('ventos', true)).toBe(false);
+    expect(magic('ventos', false)).toBe(true);
+    expect(magic('matéria', true)).toBe(false);
+  });
+});
+
 describe('eco da pronúncia', () => {
   it('limpo, fraco, torto, sem força', () => {
     expect(cast('ventus').echo).toBe('limpo');
     expect(cast('vendus gelus').echo).toBe('limpo');
-    expect(cast('ventes').echo).toBe('fraco');
+    expect(cast('bentus jeros').echo).toBe('fraco');
     expect(cast('ventus', true).echo).toBe('sem_forca');
     expect(cast('ventus', false, 0.2).echo).toBe('sem_forca');
     expect(cast('ventus', false, 0).echo).toBe('limpo'); // Android manda confiança 0
   });
   it('eco torto troca um morfema e sai outra magia', () => {
-    const c = cast('fentas kelu');
+    const c = cast('ventus kelus');
     expect(c.echo).toBe('torto');
-    expect(c.plan?.text).not.toBe('venta gel');
+    expect(c.plan?.text).not.toBe('ventus gelus');
   });
 });
 
@@ -122,7 +159,8 @@ describe('motor de essências', () => {
     expect(p('alteror').fromAbove).toBe(true);
     expect(p('maventus').cost).toBeGreaterThan(p('ventus').cost);
   });
-  it('sem terminação a essência não toma forma', () => expect(p('vent').body.shape).toBeNull());
+  it('sem terminação na infusão ela só se mistura', () =>
+    expect(p('laventus gel').infusion?.shape).toBeNull());
   it('a matéria sai da essência, não de tabela', () => {
     const stone = materialize(p('terum').body.essence);
     const wind = materialize(p('ventus').body.essence);
