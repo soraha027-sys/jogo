@@ -1,0 +1,24 @@
+name: Eco CI
+on:
+  push:
+    branches: [main]
+    paths: ['eco-src/**']
+  pull_request:
+    paths: ['eco-src/**']
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: eco-src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: eco-src/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build

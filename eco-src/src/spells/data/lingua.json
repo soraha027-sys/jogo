@@ -1,0 +1,40 @@
+{
+  "axes": ["heat", "mass", "flow", "bond", "glow", "warp"],
+  "roots": {
+    "pir": { "essence": [1, -0.4, 0.3, -0.7, 0.8, 0], "gloss": "calor" },
+    "vent": { "essence": [0, -1, 1, -0.9, 0, 0], "gloss": "ar" },
+    "gel": { "essence": [-1, 0.3, -0.5, 0.9, 0.3, 0], "gloss": "frio", "alt": ["jeu"] },
+    "lav": { "essence": [-0.15, 0.5, 0.5, -0.3, 0, 0], "gloss": "água" },
+    "ter": { "essence": [0.1, 1, -0.8, 0.8, -0.4, 0], "gloss": "pedra" },
+    "kor": { "essence": [0, 0.2, -0.2, 0.2, -0.5, 1], "gloss": "matéria" }
+  },
+  "prefixes": {
+    "la": { "gloss": "avesso: inverte a essência da palavra" },
+    "ma": { "gloss": "grande" },
+    "mi": { "gloss": "pequeno e rápido" },
+    "re": { "gloss": "eco: repete três vezes" },
+    "al": { "gloss": "vem do alto", "alt": ["au"] },
+    "ko": { "gloss": "liga essências opostas" }
+  },
+  "endings": {
+    "us": { "shape": "vortex", "gloss": "vórtice", "cost": 16 },
+    "or": { "shape": "projectile", "gloss": "projétil", "cost": 10, "alt": ["ou"] },
+    "a": { "shape": "wave", "gloss": "onda", "cost": 14 },
+    "um": { "shape": "pillar", "gloss": "pilar", "cost": 12 },
+    "ar": { "shape": "jet", "gloss": "jato", "cost": 12 },
+    "ia": { "shape": "rain", "gloss": "chuva", "cost": 18 }
+  },
+  "linkers": ["i", "o", "u", "e"],
+  "rootWeights": [1, 0.6, 0.4],
+  "tension": { "turbulent": 0.6, "unstable": 1.2 },
+  "echo": { "clean": 0.12, "weak": 0.24, "bent": 0.36 },
+  "commands": {
+    "vassoura": ["vassoura"],
+    "sentar": ["sentar", "senta"],
+    "acenar": ["acenar", "tchau"]
+  },
+  "weakConfidence": 0.45,
+  "weakVolume": 0.02,
+  "manaMax": 100,
+  "manaRegen": 14
+}
