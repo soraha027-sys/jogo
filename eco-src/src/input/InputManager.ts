@@ -24,7 +24,7 @@ export class InputManager {
   consumeEdges(): void {
     const f = this.frame;
     f.jumpPressed = f.flyPressed = f.micPressed = f.debugPressed = false;
-    f.sitPressed = f.wavePressed = false;
+    f.sitPressed = f.wavePressed = f.attackPressed = false;
     f.debugSay = 0;
   }
 

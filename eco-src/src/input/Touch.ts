@@ -21,6 +21,8 @@ export class TouchSource implements InputSource {
   private sprintOn = false;
   private jumpEdge = false;
   private flyEdge = false;
+  private atkEdge = false;
+  private readonly atk: HTMLButtonElement;
   private readonly ac = new AbortController();
   private readonly stick: HTMLElement;
   private readonly knob: HTMLElement;
@@ -38,7 +40,8 @@ export class TouchSource implements InputSource {
     const sprint = button('sprint', icons.sprint, 'Correr');
     const fly = button('fly', icons.fly, 'Voar');
     this.pad.append(sprint, fly, jump);
-    root.append(this.stick, this.pad);
+    this.atk = button('atk', icons.atk, 'Atacar (E)');
+    root.append(this.stick, this.pad, this.atk);
     if (matchMedia('(pointer: coarse)').matches) root.classList.add('touch');
 
     const o = { signal: this.ac.signal };
@@ -59,6 +62,9 @@ export class TouchSource implements InputSource {
     });
     press(fly, o, (d) => {
       if (d) this.flyEdge = true;
+    });
+    press(this.atk, o, (d) => {
+      if (d) this.atkEdge = true;
     });
   }
 
@@ -124,7 +130,13 @@ export class TouchSource implements InputSource {
     f.sprint ||= this.sprintOn && (x !== 0 || y !== 0);
     f.jumpPressed ||= this.jumpEdge;
     f.flyPressed ||= this.flyEdge;
-    this.jumpEdge = this.flyEdge = false;
+    f.attackPressed ||= this.atkEdge;
+    this.jumpEdge = this.flyEdge = this.atkEdge = false;
+  }
+
+  /** Mostra no botão de atacar qual magia está equipada. */
+  setEquipped(text: string): void {
+    this.atk.dataset.spell = text;
   }
 
   /** Reflete o estado de voo no botão. */
@@ -136,6 +148,7 @@ export class TouchSource implements InputSource {
     this.ac.abort();
     this.stick.remove();
     this.pad.remove();
+    this.atk.remove();
   }
 }
 

@@ -26,3 +26,8 @@
 - D19 Bruxa procedural v2: uma malha skinned (cor por vértice, ~3 mil triângulos) + rosto em canvas = 2 draw calls. Luz de preenchimento segue a câmera pra o rosto nunca ficar escuro.
 - D20 Animações são funções de pose amostradas a 30 fps (curvas suaves, antecipação e acomodação) + camadas em tempo real: olhar pra mira, molas, amassa-e-estica, piscar, boca, poeira.
 - D21 Pra ficar idêntica à arte, o caminho é um GLB modelado: `assets/characters/witch.glb` com ossos `mixamorig*` e clipes com os nomes de `ANIMS` entra sem mexer no código.
+- D22 Animação: os ossos voltam pra pose de descanso todo quadro antes do mixer e todo clipe escreve o esqueleto inteiro. Antes, o olhar pra mira girava o peito um pouco a cada quadro em clipes sem trilha do peito, e ela rodava 360°.
+- D23 Árvore própria: pesos por estado com fade; andar e correr tocam juntos com a mesma fase, misturados pela velocidade, e a fase anda pela distância (passada de 1,5 m andando e 3,3 m correndo). Velocidades 2,6 e 7,2 m/s.
+- D24 Feitiço, aceno e dar de ombros em movimento tocam como camada aditiva só do tronco; parada, corpo inteiro. Pouso correndo não trava a corrida.
+- D25 Molas do cabelo, saia e mangas: pêndulo amortecido em passos de 1/120 s, amortecendo a velocidade relativa ao apoio (correr não deixa a manga esticada pra trás). A versão anterior corrigia 100% da posição por quadro e tremia.
+- D26 Botão de atacar (do build que o Rafael enviou) agora está no código: E, clique esquerdo com o mouse travado, RB ou botão na tela relançam a última magia falada, com recarga de 0,45 s.

@@ -103,10 +103,17 @@ function cut(g: BufferGeometry, inside: (c: Vector3) => boolean): BufferGeometry
 
 export interface SpringSpec {
   bone: Bone;
+  /** Metros do pivô até a ponta simulada. */
   length: number;
+  /** Rigidez da mola (1/s²): maior = volta mais rápido pro lugar. */
   stiffness: number;
-  drag: number;
+  /** Fração do amortecimento crítico (0..1): menor = balança mais. */
+  damping: number;
+  /** Arrasto do ar (1/s): o quanto a peça fica pra trás quando ela corre. */
+  air: number;
+  /** Gravidade extra além da pose (m/s²). */
   gravity: number;
+  /** Ângulo máximo em relação à pose (rad). */
   limit: number;
 }
 export interface WitchRig {
@@ -594,18 +601,19 @@ export function buildWitchRig(): WitchRig {
     b: Bone | undefined,
     length: number,
     stiffness: number,
-    drag: number,
+    damping: number,
+    air: number,
     gravity: number,
     limit: number,
-  ): SpringSpec[] => (b ? [{ bone: b, length, stiffness, drag, gravity, limit }] : []);
+  ): SpringSpec[] => (b ? [{ bone: b, length, stiffness, damping, air, gravity, limit }] : []);
   const springs = [
-    ...spring(skirt, 0.24, 90, 0.22, 2, 0.5),
-    ...spring(limb.LeftSleeve, 0.2, 60, 0.16, 5, 0.9),
-    ...spring(limb.RightSleeve, 0.2, 60, 0.16, 5, 0.9),
-    ...spring(hairBack, 0.34, 55, 0.14, 4, 0.8),
-    ...spring(limb.LeftHair, 0.26, 60, 0.15, 4, 0.7),
-    ...spring(limb.RightHair, 0.26, 60, 0.15, 4, 0.7),
-    ...spring(ahoge, 0.09, 130, 0.08, 0, 0.9),
+    ...spring(skirt, 0.24, 320, 0.55, 0.8, 1, 0.35),
+    ...spring(limb.LeftSleeve, 0.2, 170, 0.5, 1.2, 3, 0.6),
+    ...spring(limb.RightSleeve, 0.2, 170, 0.5, 1.2, 3, 0.6),
+    ...spring(hairBack, 0.34, 120, 0.42, 1.6, 2, 0.7),
+    ...spring(limb.LeftHair, 0.26, 150, 0.45, 1.4, 2, 0.55),
+    ...spring(limb.RightHair, 0.26, 150, 0.45, 1.4, 2, 0.55),
+    ...spring(ahoge, 0.09, 420, 0.25, 0.5, 0, 0.8),
   ];
 
   return { root, bones, material, broom, springs, setFace: face.set, triangles: mb.triangles };

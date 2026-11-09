@@ -8,6 +8,11 @@ import {
 import type { KeyframeTrack } from 'three';
 import { BONE_PREFIX, HIPS_Y } from './rig';
 
+/** Clipes que, com ela em movimento, tocam só no tronco por cima da locomoção. */
+export const UPPER: ReadonlySet<string> = new Set(['cast', 'shrug', 'wave']);
+/** Trilhas do tronco pra cima (camada aditiva). */
+export const UPPER_BONES = /(Spine1|Spine2|Neck|Head|Shoulder|Arm|ForeArm|Hand)\.quaternion$/;
+
 export const ANIMS = [
   'idle',
   'idleGrumpy',
@@ -52,6 +57,20 @@ const up = (v: number): number => Math.max(0, v);
 
 /** Pose neutra: braços em A como no design, cabeça levemente baixa (emburrada). */
 const STAND: Pose = {
+  // todos os ossos animados entram aqui: cada clipe escreve o esqueleto inteiro
+  Hips: [0, 0, 0],
+  Spine: [0, 0, 0],
+  Spine1: [0, 0, 0],
+  Spine2: [0, 0, 0],
+  Neck: [0, 0, 0],
+  LeftShoulder: [0, 0, 0],
+  RightShoulder: [0, 0, 0],
+  LeftHand: [0, 0, 0],
+  RightHand: [0, 0, 0],
+  LeftLeg: [0, 0, 0],
+  RightLeg: [0, 0, 0],
+  LeftFoot: [0, 0, 0],
+  RightFoot: [0, 0, 0],
   LeftArm: [0, 0, 24],
   RightArm: [0, 0, -24],
   LeftForeArm: [-8, 0, 0],
@@ -138,9 +157,13 @@ function stride(ph: number, run: number): Pose {
   const l = sin(ph);
   const leg = (s: number, side: 1 | -1): Pose[string] => [-6 * run + sw * s, 0, 3 * side];
   const knee = (c: number): number => 8 + 10 * run + (48 + 36 * run) * up(-c) ** 0.8;
-  // corrida de anime: braços jogados pra trás, mangas voando
-  const arm = (s: number, side: 1 | -1): Pose[string] =>
-    run > 0.5 ? [40 + 7 * s, 0, 32 * side] : [-20 * s, 0, 20 * side];
+  // braço balança oposto à perna; correndo, o cotovelo dobra e o balanço cresce
+  const arm = (s: number, side: 1 | -1): Pose[string] => [
+    -(20 + 18 * run) * s + 6 * run,
+    0,
+    (20 - 6 * run) * side,
+  ];
+  const elbow = (s: number): number => -12 - 58 * run - (10 + 12 * run) * up(s);
   return {
     Hips: [0, -5 * l, 2.5 * l],
     Spine: [3 + 13 * run, 6 * l, -2 * l],
@@ -154,8 +177,8 @@ function stride(ph: number, run: number): Pose {
     RightFoot: [-14 * up(-l) + 10 * up(l) * run, 0, 0],
     LeftArm: arm(l, 1),
     RightArm: arm(-l, -1),
-    LeftForeArm: [run > 0.5 ? -12 : -12 - 10 * up(-sin(ph - 0.06)), 0, 0],
-    RightForeArm: [run > 0.5 ? -12 : -12 - 10 * up(sin(ph - 0.06)), 0, 0],
+    LeftForeArm: [elbow(-sin(ph - 0.06)), 0, 0],
+    RightForeArm: [elbow(sin(ph - 0.06)), 0, 0],
     y: -0.012 - 0.018 * run - (0.012 + 0.016 * run) * cos(ph * 2),
   };
 }

@@ -74,6 +74,25 @@ export async function createGame(
   const pending: { at: number; run: () => void }[] = [];
   let time = 0;
   let diag = '';
+  // magia equipada: a última falada; E / clique / RB / botão relançam sem falar
+  let equipped: Cast | null = null;
+  let cooldown = 0;
+  const attack = (): void => {
+    if (time < cooldown) return;
+    if (!equipped) {
+      spellHud.showCast({
+        echo: 'sem_eco',
+        morphs: [],
+        reading: '',
+        state: null,
+        why: 'Recite uma magia primeiro.',
+        isNew: false,
+      });
+      return;
+    }
+    cooldown = time + 0.45;
+    onCast(equipped, true);
+  };
 
   const hud = new Hud(hudRoot, events, {
     cycleQuality: () => quality.cycle(),
@@ -81,7 +100,7 @@ export async function createGame(
   });
 
   /** Tudo que é falado (mic, tecla de teste ou texto) passa por aqui. */
-  const onCast = (cast: Cast): void => {
+  const onCast = (cast: Cast, fromButton = false): void => {
     if (cast.kind === 'command') {
       if (cast.id === 'vassoura') player.setFlying(!player.flying);
       else if (cast.id === 'sentar') witch.toggleSit();
@@ -103,6 +122,10 @@ export async function createGame(
       witch.trigger('shrug');
       spells.smoke(witch.handPosition(new Vector3()), 6, 1.5);
       return spellHud.showCast(view);
+    }
+    if (!fromButton) {
+      equipped = { ...cast, echo: 'limpo' };
+      touch.setEquipped(plan.text);
     }
     let power = cast.echo === 'fraco' ? 0.6 : 1;
     if (cast.echo === 'torto') view.why = 'Um som escorregou e a magia virou outra.';
@@ -205,6 +228,7 @@ export async function createGame(
       if (f.debugPressed) events.emit('debug:changed', debug.toggle());
       if (f.sitPressed) witch.toggleSit();
       if (f.wavePressed) witch.trigger('wave');
+      if (f.attackPressed) attack();
       if (f.debugSay) simulate('', f.debugSay);
       player.fixedUpdate(step, f, rig.yaw, rig.pitch, world.colliders);
       input.consumeEdges();

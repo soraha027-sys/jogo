@@ -28,6 +28,13 @@ export class KeyboardMouse implements InputSource {
     addEventListener('keyup', (e) => this.keys.delete(e.code), o);
     addEventListener('blur', () => this.keys.clear(), o);
     canvas.addEventListener(
+      'mousedown',
+      (e) => {
+        if (document.pointerLockElement === canvas && e.button === 0) this.edges.add('KeyE');
+      },
+      o,
+    );
+    canvas.addEventListener(
       'click',
       () => {
         if (document.pointerLockElement !== canvas && matchMedia('(pointer: fine)').matches)
@@ -70,6 +77,7 @@ export class KeyboardMouse implements InputSource {
     f.debugPressed ||= e.has('F3');
     f.sitPressed ||= e.has('KeyC');
     f.wavePressed ||= e.has('KeyV');
+    f.attackPressed ||= e.has('KeyE');
     for (let n = 1; n <= 5; n++) if (e.has(`Digit${n}`)) f.debugSay = n;
     e.clear();
   }

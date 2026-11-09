@@ -2,7 +2,17 @@ import { deadzone } from './math';
 import type { InputFrame, InputSource } from './types';
 
 const LOOK_RATE = 2.8; // rad/s com o analógico no talo
-const B = { jump: 0, sprint: 1, mic: 2, fly: 3, rt: 7, debug: 8, wave: 12, sit: 13 } as const;
+const B = {
+  jump: 0,
+  sprint: 1,
+  mic: 2,
+  fly: 3,
+  rt: 7,
+  debug: 8,
+  attack: 5,
+  wave: 12,
+  sit: 13,
+} as const;
 
 /** Gamepad padrão: esq. move, dir. câmera, A pula, B/RT corre, Y voa, X mic, Select debug. */
 export class GamepadSource implements InputSource {
@@ -31,6 +41,7 @@ export class GamepadSource implements InputSource {
     f.debugPressed ||= hit(B.debug);
     f.sitPressed ||= hit(B.sit);
     f.wavePressed ||= hit(B.wave);
+    f.attackPressed ||= hit(B.attack);
     this.prev = pad.buttons.map((b) => b.pressed);
   }
 

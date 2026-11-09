@@ -509,3 +509,34 @@ body {
   gap: 5px;
   text-align: center;
 }
+
+#hud .atk {
+  position: absolute;
+  right: calc(22px + env(safe-area-inset-right));
+  bottom: calc(22px + env(safe-area-inset-bottom));
+  width: 72px;
+  height: 72px;
+  color: var(--violet);
+  border-color: var(--violet);
+}
+#hud.touch .atk {
+  right: calc(196px + env(safe-area-inset-right));
+}
+#hud .atk::after {
+  content: attr(data-spell);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: 3px 10px;
+  border-radius: 10px;
+  font-size: 11px;
+  color: #fff;
+  background: var(--glass);
+  border: 1px solid var(--line);
+  pointer-events: none;
+}
+#hud .atk:not([data-spell])::after {
+  display: none;
+}

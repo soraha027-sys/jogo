@@ -7,8 +7,8 @@ import { resolveCircle, type Aabb } from '../physics/aabb';
 const R = 0.3;
 const HEIGHT = 1.75;
 const STEP = 0.35;
-const WALK = 3.4;
-const RUN = 8.2;
+const WALK = 2.6;
+const RUN = 7.2;
 const GRAVITY = 28;
 const JUMP = 9.6;
 const JUMP2 = 8.6;
@@ -162,8 +162,14 @@ export class Player {
     this.object.position.copy(this.renderPos);
     const turn = angleDelta(this.prevFacing, this.facing);
     this.object.rotation.y = this.prevFacing + turn * alpha;
-    const target = this.flying ? clamp(-turn * 9, -0.6, 0.6) : 0;
-    this.bank += (target - this.bank) * damp(5, dt);
+    // inclina pra dentro da curva: forte na vassoura, de leve correndo no chão
+    const turnRate = turn * 60;
+    const target = this.flying
+      ? clamp(-turnRate * 0.15, -0.6, 0.6)
+      : this.grounded
+        ? clamp(-turnRate * this.speed * 0.012, -0.22, 0.22)
+        : 0;
+    this.bank += (target - this.bank) * damp(this.flying ? 5 : 8, dt);
     this.object.rotation.z = this.bank;
   }
 }
