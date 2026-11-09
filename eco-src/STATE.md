@@ -16,6 +16,9 @@ Cenário: pós-apocalíptico (ainda não existe; hoje é uma arena cinza de test
 - vfx/ `Particles.ts`, `Dust.ts` · world/ `Arena.ts`, `Dummies.ts` · physics/ `aabb.ts` (provisória) · quality/ · art/ · ui/ · debug/
 - Ainda não existem: net/, audio/, save/
 
+> ATENÇÃO: `eco/index.html` hoje é um build de arquivo único enviado pelo Rafael (09/11), com botão de atacar (E)
+> que relança a última magia. Esse código NÃO está em `eco-src/`: rodar `npm run build` sobrescreve. Portar antes.
+
 ## Feito
 - M0 base · bruxa v2 + animações + juice · língua do Eco + decodificador + motor de essências (v1 da mecânica de magia)
 
