@@ -58,7 +58,12 @@ export function phonEnd(ending: string): string {
  * então "mag é lor" soa igual a "magelor" (o g antes do e vira j).
  */
 export function toPhonemes(text: string): string {
-  return sounds(normalize(text).split(' ').map((w) => finals(w)).join(''));
+  return sounds(
+    normalize(text)
+      .split(' ')
+      .map((w) => finals(w))
+      .join(''),
+  );
 }
 
 const VOWELS = 'aeiou';
