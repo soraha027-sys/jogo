@@ -72,6 +72,13 @@ export class Player {
     this.grounded = false;
   }
 
+  /** Reaparece num ponto, parada (derrubada no PvP). */
+  teleport(p: Vector3): void {
+    this.pos.copy(p);
+    this.prev.copy(p);
+    this.vel.set(0, 0, 0);
+  }
+
   /** Soma um impulso (coice do jato de vento). */
   impulse(v: { x: number; y: number; z: number }): void {
     this.vel.x += v.x;

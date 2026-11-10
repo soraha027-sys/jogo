@@ -17,6 +17,8 @@ export interface Target {
   readonly radius: number;
   readonly status: Status;
   readonly alive: boolean;
+  /** Dono (quem é): magia nunca atinge o próprio dono. Bonecos não têm. */
+  readonly owner?: string;
   impulse(vx: number, vy: number, vz: number): void;
   flash(color: Color): void;
 }
@@ -49,6 +51,7 @@ interface Cfg {
   /** Onde quem lançou estava (matéria do projétil puxa pra lá). */
   caster: Vector3;
   self: boolean;
+  owner: string;
 }
 
 interface Pillar {
@@ -106,7 +109,7 @@ export class SpellSystem {
     private readonly data: Lingua,
     private readonly scene: Scene,
     private readonly colliders: Aabb[],
-    private readonly targets: readonly Target[],
+    private readonly targets: Target[],
     private readonly zones: Zones,
     private readonly hooks: SpellHooks,
   ) {
@@ -129,6 +132,11 @@ export class SpellSystem {
     this.updatePillars(dt);
     this.fx.update(dt);
     if (this.camera) this.style.update(dt, this.camera);
+  }
+
+  /** Quem esta magia pode atingir: todo mundo menos quem lançou. */
+  private foes(c: Cfg): Target[] {
+    return this.targets.filter((t) => t.owner === undefined || t.owner !== c.owner);
   }
 
   private track(f: FormFx): FormFx {
@@ -410,7 +418,7 @@ export class SpellSystem {
     once?: Set<Target>,
   ): void {
     const center = new Vector3(x, y, z);
-    for (const t of this.targets) {
+    for (const t of this.foes(c)) {
       if (!t.alive || once?.has(t)) continue;
       const dy = Math.max(0, Math.abs(t.pos.y + 1 - y) - 1.2);
       if (Math.hypot(t.pos.x - x, t.pos.z - z, dy) > r + t.radius) continue;
@@ -441,8 +449,9 @@ export class SpellSystem {
     origin: Vector3,
     aim: Vector3,
     center: Vector3,
-    self = true,
+    owner = 'me',
   ): boolean {
+    const self = owner === 'me';
     const m = materialize(plan.body.essence);
     const dir = aim.clone().normalize();
     const imp = scaleImpact(impactOf(plan, this.data), power * plan.power);
@@ -461,6 +470,7 @@ export class SpellSystem {
       sub: null,
       caster: center.clone(),
       self,
+      owner,
       ...o,
     });
 
@@ -531,8 +541,14 @@ export class SpellSystem {
 
   private spawn(shape: string, c: Cfg, origin: Vector3, dir: Vector3, center: Vector3): void {
     const atSelf = center === origin;
+    // mira com inclinação (bolinha no centro): no chão vale só a direção horizontal
+    const flat = new Vector3(dir.x, 0, dir.z);
+    if (flat.lengthSq() < 1e-6) flat.set(0, 0, -1);
+    flat.normalize();
     const ahead = (d: number): Vector3 =>
-      atSelf ? center.clone().setY(0) : new Vector3(center.x + dir.x * d, 0, center.z + dir.z * d);
+      atSelf
+        ? center.clone().setY(0)
+        : new Vector3(center.x + flat.x * d, 0, center.z + flat.z * d);
     switch (shape) {
       case 'projectile': {
         if (c.sky) {
@@ -589,7 +605,7 @@ export class SpellSystem {
         )
           hit = true;
       let victim: Target | null = null;
-      for (const tg of this.targets)
+      for (const tg of this.foes(c))
         if (
           tg.alive &&
           Math.hypot(tg.pos.x - pos.x, tg.pos.z - pos.z) < tg.radius + 0.3 * c.scale &&
@@ -689,7 +705,7 @@ export class SpellSystem {
       }
       if ((tick += dt) > 0.35) {
         tick = 0;
-        for (const tg of this.targets) {
+        for (const tg of this.foes(c)) {
           if (!tg.alive || Math.hypot(tg.pos.x - p.x, tg.pos.z - p.z) > R + tg.radius) continue;
           this.strike(c, tg, 0.3, p, 'in');
           const to = new Vector3(p.x - tg.pos.x, 0, p.z - tg.pos.z);
@@ -735,7 +751,7 @@ export class SpellSystem {
           p.z,
         );
       }
-      for (const tg of this.targets) {
+      for (const tg of this.foes(c)) {
         if (!tg.alive || hit.has(tg)) continue;
         if (Math.abs(Math.hypot(tg.pos.x - p.x, tg.pos.z - p.z) - r) < 0.9) {
           hit.add(tg);
@@ -763,7 +779,7 @@ export class SpellSystem {
     const r = 0.7 * c.scale;
     const solid = c.imp.solid > 0.4 || (c.imp.chill > 0.5 && c.imp.burn < 0.2);
     const H = 3 * Math.sqrt(c.scale) + 1;
-    for (const tg of this.targets) {
+    for (const tg of this.foes(c)) {
       if (!tg.alive || Math.hypot(tg.pos.x - p.x, tg.pos.z - p.z) > r + 0.6) continue;
       this.strike(c, tg, 0.8, p, 'out');
       tg.impulse(0, 9 + 3 * c.scale, 0);
@@ -778,7 +794,7 @@ export class SpellSystem {
       this.style.helix(c.lead, p.clone().setY(c.sky ? 11 : 0.05), H, r * 1.4, life, c.sky);
     // água em pilar vira prisão: bolha em volta de quem estava perto, que fica preso e encharcado
     if (!solid && c.imp.wet > 0.6 && c.imp.burn < 0.3)
-      for (const tg of this.targets) {
+      for (const tg of this.foes(c)) {
         if (!tg.alive || Math.hypot(tg.pos.x - p.x, tg.pos.z - p.z) > r + 1.8) continue;
         const hold = 2.6 * c.dur;
         tg.status.stunned = Math.max(tg.status.stunned, hold);
@@ -948,7 +964,7 @@ export class SpellSystem {
       }
       if ((tick += dt) > 0.15) {
         tick = 0;
-        for (const tg of this.targets) {
+        for (const tg of this.foes(c)) {
           if (!tg.alive) continue;
           const ap = tg.pos
             .clone()

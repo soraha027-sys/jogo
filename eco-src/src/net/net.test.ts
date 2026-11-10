@@ -17,6 +17,7 @@ const snap = (t: number, x: number, yaw = 0, extra: Partial<Snap> = {}): Snap =>
   lastJumpDouble: false,
   landCount: 0,
   mouth: 0,
+  hp: 1,
   ...extra,
 });
 

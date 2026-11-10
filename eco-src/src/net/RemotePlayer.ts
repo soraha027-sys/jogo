@@ -20,6 +20,7 @@ export class RemotePlayer {
     lastJumpDouble: false,
     landCount: 0,
     mouth: 0,
+    hp: 1,
   };
   private bank = 0;
   private lastYaw = 0;

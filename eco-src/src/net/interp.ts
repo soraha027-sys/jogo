@@ -63,6 +63,7 @@ export class SnapBuffer {
     out.jumpCount = d.jumpCount;
     out.landCount = d.landCount;
     out.lastJumpDouble = d.lastJumpDouble;
+    out.hp = b.hp;
     return true;
   }
 }

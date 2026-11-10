@@ -17,6 +17,8 @@ export interface Snap {
   landCount: number;
   /** Abertura da boca 0..1 (volume da fala). */
   mouth: number;
+  /** Vida 0..1 (cada um é dono da própria vida no PvP). */
+  hp: number;
 }
 
 const r3 = (v: number): number => Math.round(v * 1000) / 1000;
@@ -35,6 +37,7 @@ export function encodeSnap(s: Snap): number[] {
     s.jumpCount,
     s.landCount,
     Math.round(s.mouth * 100) / 100,
+    Math.round(s.hp * 100) / 100,
   ];
 }
 
@@ -42,8 +45,9 @@ const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFi
 
 /** Valida tudo que chega da rede: um par mal-intencionado não derruba o jogo. */
 export function decodeSnap(a: unknown): Snap | null {
-  if (!Array.isArray(a) || a.length !== 10 || !a.every(finite)) return null;
-  const [t, x, y, z, yaw, speed, flags, jump, land, mouth] = a as number[];
+  // 10 campos = versão antiga, sem vida
+  if (!Array.isArray(a) || (a.length !== 10 && a.length !== 11) || !a.every(finite)) return null;
+  const [t, x, y, z, yaw, speed, flags, jump, land, mouth, hp = 1] = a as number[];
   if ([x, y, z].some((v) => Math.abs(v ?? 0) > 1e4)) return null;
   const f = flags ?? 0;
   return {
@@ -59,6 +63,7 @@ export function decodeSnap(a: unknown): Snap | null {
     jumpCount: jump ?? 0,
     landCount: land ?? 0,
     mouth: Math.min(1, Math.max(0, mouth ?? 0)),
+    hp: Math.min(1, Math.max(0, hp)),
   };
 }
 

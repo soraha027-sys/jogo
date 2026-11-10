@@ -222,11 +222,11 @@ body {
 /* ---------- magia ---------- */
 .mana {
   position: absolute;
-  top: calc(14px + env(safe-area-inset-top));
+  top: calc(76px + env(safe-area-inset-top));
   left: 50%;
-  width: 150px;
+  transform: translateX(-50%);
+  width: min(150px, 34vw);
   height: 6px;
-  margin-left: -75px;
   border-radius: 3px;
   background: var(--glass);
   border: 1px solid var(--line);
@@ -499,7 +499,7 @@ body {
 
 .spellout {
   position: absolute;
-  top: calc(68px + env(safe-area-inset-top));
+  top: calc(92px + env(safe-area-inset-top));
   left: 50%;
   transform: translateX(-50%);
   width: min(62vw, 560px);
@@ -694,4 +694,74 @@ body {
 .adm .adm-out span {
   font-size: 12px;
   opacity: 0.75;
+}
+
+.hp {
+  position: absolute;
+  top: calc(62px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(150px, 34vw);
+  height: 9px;
+  border-radius: 5px;
+  background: var(--glass);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.hp i {
+  display: block;
+  height: 100%;
+  transform-origin: left;
+  background: linear-gradient(90deg, #4fd08a, #9af0b0);
+  transition: transform 0.15s;
+}
+.hp i.low {
+  background: linear-gradient(90deg, #e0405a, #ff6a7a);
+}
+.hurt {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 45%, rgba(220, 30, 60, 0.75) 100%);
+}
+.crosshair {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow:
+    0 0 0 1.5px rgba(20, 10, 35, 0.75),
+    0 0 6px rgba(255, 255, 255, 0.6);
+  pointer-events: none;
+}
+.crosshair[hidden],
+.down[hidden] {
+  display: none;
+}
+.down {
+  position: absolute;
+  left: 50%;
+  top: 38%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: #fff;
+  text-shadow: 0 2px 8px #000;
+  pointer-events: none;
+}
+.down b {
+  font-size: 30px;
+  letter-spacing: 0.08em;
+  color: #ff8a9a;
+}
+#hud .top .view-btn {
+  font-weight: 800;
+  font-size: 12px;
 }

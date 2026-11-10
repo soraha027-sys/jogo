@@ -19,6 +19,8 @@ export interface InputFrame {
   wavePressed: boolean;
   /** Relança a magia equipada (a última falada). */
   attackPressed: boolean;
+  /** Troca 1ª / 3ª pessoa (P). */
+  viewPressed: boolean;
   /** Debug: 1 a 5 simula uma fala; 0 = nada. */
   debugSay: number;
 }
@@ -44,6 +46,7 @@ export function emptyFrame(): InputFrame {
     sitPressed: false,
     wavePressed: false,
     attackPressed: false,
+    viewPressed: false,
     debugSay: 0,
   };
 }

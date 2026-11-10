@@ -14,6 +14,8 @@ export class ThirdPersonCamera {
   distance = 3.4;
   /** Câmera por cima do ombro direito: a bruxa não tampa a mira nem a magia. */
   shoulder = 0.6;
+  /** 1ª pessoa: câmera nos olhos da bruxa (que some pra não tampar). */
+  firstPerson = false;
   private readonly pivot = new Vector3();
   private dist = 3.4;
   private roll = 0;
@@ -64,6 +66,15 @@ export class ThirdPersonCamera {
     const dy = Math.sin(this.pitch);
     const dz = Math.cos(this.yaw) * cp;
 
+    if (this.firstPerson) {
+      // olhos: sem ombro, sem recuo; olha pra frente (oposto da órbita)
+      const eye = this.pivot.clone().setY(this.pivot.y + 0.25);
+      this.camera.position.copy(eye);
+      this.camera.lookAt(eye.x - dx, eye.y - dy, eye.z - dz);
+      this.dist = 0.6;
+      this.finish(dt, lookX, flying, speed);
+      return;
+    }
     const want = (flying ? 6 : this.distance) + SKIN;
     let free = want;
     for (const b of boxes) free = rayAabb(p.x, p.y, p.z, dx, dy, dz, b, free);
@@ -79,6 +90,11 @@ export class ThirdPersonCamera {
       cam.position.y += (Math.random() - 0.5) * this.shakeAmount;
       this.shakeAmount *= Math.exp(-6 * dt);
     }
+    this.finish(dt, lookX, flying, speed);
+  }
+
+  private finish(dt: number, lookX: number, flying: boolean, speed: number): void {
+    const cam = this.camera;
     const bank = flying && dt > 0 ? clamp((-lookX / dt) * 0.07, -0.32, 0.32) : 0;
     this.roll += (bank - this.roll) * damp(4, dt);
     cam.rotateZ(this.roll);

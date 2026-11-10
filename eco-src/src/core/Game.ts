@@ -13,7 +13,10 @@ import { buildLexicon, decode, spell, type Morph, type ParsedWord } from '../spe
 import { Grimoire } from '../spells/Grimoire';
 import { interpret, type Alt, type Cast } from '../spells/interpret';
 import { LINGUA } from '../spells/lingua';
-import { SpellSystem } from '../spells/SpellSystem';
+import { SpellSystem, type Target } from '../spells/SpellSystem';
+import { LocalFighter, RemoteFighter } from '../combat/Fighters';
+import { rayAabb } from '../physics/aabb';
+import { Vitals } from '../ui/Vitals';
 import { Hud } from '../ui/Hud';
 import { SpellHud, type CastView } from '../ui/SpellHud';
 import { AdminPanel } from '../ui/Admin';
@@ -96,10 +99,15 @@ export async function createGame(
       }),
   );
 
+  // PvP: a própria bruxa também é alvo (das magias dos outros) e cada um é dono da própria vida
+  const me = new LocalFighter(player, () => rig.shake(0.18));
+  const targets: Target[] = [...dummies, me];
+  const fighters = new Map<string, RemoteFighter>();
+
   const data = LINGUA;
   const lexicon = buildLexicon(data);
   const grimoire = new Grimoire();
-  const spells: SpellSystem = new SpellSystem(data, scene, world.colliders, dummies, zones, {
+  const spells: SpellSystem = new SpellSystem(data, scene, world.colliders, targets, zones, {
     popup: (text, at, kind, big) => popups.spawn(text, at, kind, big),
     drain: (amount) => (spells.mana = Math.min(data.manaMax, spells.mana + amount)),
     recoil: (v) => player.impulse(v),
@@ -124,6 +132,7 @@ export async function createGame(
       });
       return;
     }
+    if (me.held) return;
     cooldown = time + 0.45;
     onCast(equipped, true);
   };
@@ -141,6 +150,7 @@ export async function createGame(
       else if (cast.id === 'acenar') witch.trigger('wave');
       return;
     }
+    if (me.held) return; // presa, congelada ou derrubada não lança
     const plan = cast.plan;
     const view: CastView = {
       echo: cast.echo,
@@ -172,13 +182,15 @@ export async function createGame(
       power = 0.25;
     } else spells.mana -= plan.cost;
 
-    // ?view=side: mira de lado pra câmera de inspeção ver a magia atravessando a tela
-    const aimYaw = rig.yaw + (query.get('view') === 'side' ? Math.PI / 2 : 0);
-    const aim = new Vector3(
-      -Math.sin(aimYaw),
-      player.flying ? -Math.sin(rig.pitch) : 0.03,
-      -Math.cos(aimYaw),
-    );
+    // mira: o ponto que a bolinha do centro da tela marca (?view=side: de lado, pra inspeção)
+    const sideView = query.get('view') === 'side';
+    const aimYaw = rig.yaw + (sideView ? Math.PI / 2 : 0);
+    const point = sideView ? null : aimPoint();
+    const aimFrom = (from: Vector3): Vector3 =>
+      point
+        ? point.clone().sub(from).normalize()
+        : new Vector3(-Math.sin(aimYaw), 0.03, -Math.cos(aimYaw));
+    const aim = aimFrom(player.pos.clone().setY(player.pos.y + 1.2));
     player.face(Math.atan2(aim.x, aim.z));
     const unstable = plan.state === 'instavel';
     if (unstable) {
@@ -193,6 +205,7 @@ export async function createGame(
       at: time + 0.26,
       run: () => {
         const hand = witch.handPosition(new Vector3());
+        const aim = aimFrom(hand);
         const ok = spells.cast(plan, power, hand, aim, player.pos);
         net?.sendCast({
           words: [plan.body, ...(plan.infusion ? [plan.infusion] : [])].map((w) => ({
@@ -214,6 +227,34 @@ export async function createGame(
         navigator.vibrate?.([40, 30, 80]);
       },
     });
+  };
+  /** Onde a bolinha da mira aponta: chão, parede, boneco ou outra bruxa (até 60 m). */
+  const aimPoint = (): Vector3 => {
+    const cam = rig.camera;
+    const o = cam.position;
+    const d = cam.getWorldDirection(new Vector3());
+    // em 3ª pessoa ignora o que está entre a câmera e a bruxa
+    const minT = rig.firstPerson ? 0.3 : o.distanceTo(player.renderPos) + 0.3;
+    let t = 60;
+    if (d.y < -1e-4) t = Math.min(t, -o.y / d.y);
+    for (const b of world.colliders) {
+      const h = rayAabb(o.x, o.y, o.z, d.x, d.y, d.z, b, t);
+      if (h >= minT) t = Math.min(t, h);
+    }
+    for (const tg of targets) {
+      if (tg === me || !tg.alive) continue;
+      const c = tg.pos
+        .clone()
+        .setY(tg.pos.y + 1)
+        .sub(o);
+      const tca = c.dot(d);
+      const d2 = c.lengthSq() - tca * tca;
+      const r2 = (tg.radius + 0.35) ** 2;
+      if (d2 > r2) continue;
+      const h = tca - Math.sqrt(r2 - d2);
+      if (h >= minT) t = Math.min(t, h);
+    }
+    return o.clone().addScaledVector(d, Math.max(t, minT));
   };
   const say = (alts: Alt[], weak: boolean, strict = false): void => {
     const cast = interpret(alts, lexicon, { rng: Math.random, weak, strict, lenient: !strict });
@@ -311,7 +352,7 @@ export async function createGame(
     if (!r || !p) return;
     r.witch.trigger('cast');
     const at = new Vector3(r.state.x, r.state.y, r.state.z);
-    const ok = spells.cast(p, m.power, new Vector3(...m.origin), new Vector3(...m.aim), at, false);
+    const ok = spells.cast(p, m.power, new Vector3(...m.origin), new Vector3(...m.aim), at, id);
     if (!ok) {
       r.witch.trigger('fail');
       r.witch.setSoot(4);
@@ -335,12 +376,18 @@ export async function createGame(
           if (!net?.buffers.has(id)) return; // saiu antes de carregar
           remotes.set(id, r);
           scene.add(r.object);
+          const f = new RemoteFighter(id, r);
+          fighters.set(id, f);
+          targets.push(f);
         });
       },
       leave: (id) => {
         const r = remotes.get(id);
         if (r) scene.remove(r.object);
         remotes.delete(id);
+        const f = fighters.get(id);
+        if (f) targets.splice(targets.indexOf(f), 1);
+        fighters.delete(id);
         netStatus(t.kind === 'local' ? 'local' : 'online');
       },
       cast: onRemoteCast,
@@ -368,6 +415,15 @@ export async function createGame(
   addEventListener('resize', resize);
   resize();
 
+  // 1ª / 3ª pessoa (P ou botão 3P/1P); a bolinha da mira some só na câmera de inspeção
+  const toggleView = (): void => {
+    rig.firstPerson = !rig.firstPerson;
+    vitals.setView(rig.firstPerson);
+  };
+  const vitals = new Vitals(hudRoot, toggleView);
+  vitals.showCrosshair(!view);
+  const HELD = { moveX: 0, moveY: 0, jump: false, jumpPressed: false, sprint: false };
+
   let castHeld = false;
   const loop = new FixedLoop({
     begin: (dt) => input.sample(dt),
@@ -382,12 +438,32 @@ export async function createGame(
       if (f.sitPressed) witch.toggleSit();
       if (f.wavePressed) witch.trigger('wave');
       if (f.attackPressed) attack();
+      if (f.viewPressed) toggleView();
       if (f.debugSay) simulate('', f.debugSay);
-      player.fixedUpdate(step, f, rig.yaw, rig.pitch, world.colliders);
+      player.fixedUpdate(
+        step,
+        me.held ? { ...f, ...HELD } : f,
+        rig.yaw,
+        rig.pitch,
+        world.colliders,
+      );
       input.consumeEdges();
     },
     frame: (dt, alpha) => {
       time += dt;
+      const life = me.update(dt);
+      if (life === 'down') {
+        popups.spawn('DERRUBADA', player.pos.clone().setY(player.pos.y + 2.2), 'burn', true);
+        spells.smoke(player.pos.clone().setY(player.pos.y + 1), 30, 4);
+        rig.shake(0.5);
+        navigator.vibrate?.([60, 40, 120]);
+      } else if (life === 'up') {
+        player.teleport(spawn);
+        spells.mana = data.manaMax;
+      }
+      // em 1ª pessoa a bruxa some (a câmera está nos olhos) e vira junto com a câmera
+      witch.root.visible = me.alive && !rig.firstPerson;
+      if (rig.firstPerson && !player.flying) player.face(rig.yaw + Math.PI, 0.05);
       player.render(alpha, dt);
       const mouth = voice.mouth(dt);
       const look = angleDelta(player.yaw, rig.yaw + Math.PI);
@@ -422,9 +498,11 @@ export async function createGame(
         lastJumpDouble: player.lastJumpDouble,
         landCount: player.landCount,
         mouth,
+        hp: me.hp01,
       });
       const now = performance.now() / 1000;
       for (const [id, r] of remotes) r.update(dt, now, net?.buffers.get(id));
+      for (const fg of fighters.values()) fg.update(dt, rig.camera);
       spells.update(dt);
       if (infiniteMana) spells.mana = data.manaMax;
       dust.update(dt);
@@ -442,6 +520,7 @@ export async function createGame(
       world.fill.position.copy(rig.camera.position).setY(rig.camera.position.y + 1.5);
       quality.render(dt);
       spellHud.update(dt, spells.mana / data.manaMax, mouth);
+      vitals.update(dt, me.hp01, me.downLeft);
       debug.update(dt, () => ({
         quality: quality.id + (quality.auto ? ' (medindo)' : ''),
         state: player.flying ? 'voo' : player.grounded ? 'chão' : 'ar',

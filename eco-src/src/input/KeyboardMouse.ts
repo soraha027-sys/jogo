@@ -79,6 +79,7 @@ export class KeyboardMouse implements InputSource {
     f.sitPressed ||= e.has('KeyC');
     f.wavePressed ||= e.has('KeyV');
     f.attackPressed ||= e.has('KeyE');
+    f.viewPressed ||= e.has('KeyP');
     for (let n = 1; n <= 5; n++) if (e.has(`Digit${n}`)) f.debugSay = n;
     e.clear();
   }
