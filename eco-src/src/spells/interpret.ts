@@ -35,6 +35,8 @@ export interface InterpretOptions {
   weak?: boolean;
   /** Microfone aberto: aplica a lista de palavras comuns do português (que nunca viram magia). */
   strict?: boolean;
+  /** Segurando o botão: margem maior (é intenção de magia). */
+  lenient?: boolean;
 }
 
 /**
@@ -45,6 +47,13 @@ export interface InterpretOptions {
  */
 export function interpret(alts: Alt[], lex: Lexicon, o: InterpretOptions): Cast | null {
   const d = lex.data;
+  const loose = !!o.lenient && !o.strict;
+  const echoT = loose ? d.echoHold : d.echo;
+  const minMorphs = loose ? d.rulesHold.minMorphs : d.rules.minMorphs;
+  const maxSkips = loose ? d.rulesHold.maxSkips : d.rules.maxSkips;
+  const decodeOpts = loose
+    ? { tolerance: d.rulesHold.tolerance, needEnding: false, extraVowel: 0.3 }
+    : {};
   /** Por que a fala não virou magia (vai pra tela, junto com o que foi ouvido). */
   const reason = (dec: Decoded | null, text: string): string => {
     if (!dec) {
@@ -54,15 +63,14 @@ export function interpret(alts: Alt[], lex: Lexicon, o: InterpretOptions): Cast 
         return `Faltou a terminação: tente “${normalize(text).replace(/[aeiou]$/, '')}us”.`;
       return 'Não soa como a língua do Eco.';
     }
-    if (dec.cost > d.echo.bent) return 'Não soa como a língua do Eco.';
+    if (dec.cost > echoT.bent) return 'Não soa como a língua do Eco.';
     const pieces = dec.morphs.filter((m) => m.kind !== 'linker');
     const ending = dec.words[0]?.ending ?? '';
-    if (
-      pieces.length < d.rules.minMorphs &&
-      !(pieces.length === 2 && d.rules.shortEndings.includes(ending))
-    )
+    // com margem, a terminação que faltar é completada: conta como peça
+    const count = pieces.length + (loose && !ending ? 1 : 0);
+    if (count < minMorphs && !(pieces.length === 2 && d.rules.shortEndings.includes(ending)))
       return 'Curta demais: termine em -us ou ponha um prefixo (ma-, la-, mi-…).';
-    if (dec.skips > d.rules.maxSkips) return 'Sobrou som que não é da língua.';
+    if (dec.skips > maxSkips) return 'Sobrou som que não é da língua.';
     if (o.strict && isCommon(text, dec))
       return 'Palavra comum: segure o microfone pra valer como magia.';
     return '';
@@ -85,7 +93,7 @@ export function interpret(alts: Alt[], lex: Lexicon, o: InterpretOptions): Cast 
     const said = normalize(a.text);
     for (const [id, words] of Object.entries(d.commands))
       if (words.includes(said)) return { kind: 'command', id };
-    const dec = decode(a.text, lex);
+    const dec = decode(a.text, lex, decodeOpts);
     if (dec && !reason(dec, a.text)) {
       if (!best || dec.cost < best.cost) {
         best = dec;
@@ -118,11 +126,42 @@ export function interpret(alts: Alt[], lex: Lexicon, o: InterpretOptions): Cast 
 
   // fraco = tudo meio borrado; torto = só UM pedaço escorregou e o resto saiu certo
   const pieces = best.morphs.filter((m) => m.kind !== 'linker');
-  const off = pieces.filter((m) => m.cost > 0.15);
-  let echo: Echo =
-    best.cost <= d.echo.clean ? 'limpo' : best.cost <= d.echo.weak ? 'fraco' : 'torto';
-  if (echo === 'torto' && off.length !== 1) echo = 'sem_eco';
-  if (echo === 'fraco' && pieces.some((m) => m.cost > 0.6))
+  // com margem, só conta como escorregão um som bem diferente
+  const off = pieces.filter((m) => m.cost > (loose ? 0.6 : 0.15));
+  let echo: Echo = best.cost <= echoT.clean ? 'limpo' : best.cost <= echoT.weak ? 'fraco' : 'torto';
+  if (loose) {
+    // com margem, o eco é julgado peça por peça: som sobrando só enfraquece, não troca a magia
+    const worst = Math.max(0, ...pieces.map((m) => m.cost));
+    echo =
+      worst <= 0.15 && best.skips === 0
+        ? 'limpo'
+        : off.length === 0
+          ? 'fraco'
+          : off.length === 1 && worst <= 1
+            ? 'torto'
+            : 'sem_eco';
+  }
+  // com margem, raiz sem forma ganha a terminação padrão — mas sai com eco fraco
+  let morphsIn = best.morphs;
+  if (loose && !best.words[0]?.ending) {
+    let at = 0;
+    morphsIn.forEach((m, i) => {
+      if (m.kind === 'root' || m.kind === 'linker' || m.kind === 'prefix') at = i + 1;
+    });
+    // termina a 1ª palavra logo depois da última raiz dela
+    const firstWordEnd = morphsIn.findIndex(
+      (m, i) => i > 0 && m.kind === 'prefix' && morphsIn[i - 1]?.kind === 'root',
+    );
+    if (firstWordEnd > 0) at = firstWordEnd;
+    morphsIn = [
+      ...morphsIn.slice(0, at),
+      { kind: 'ending', id: d.rulesHold.defaultEnding, cost: 0 },
+      ...morphsIn.slice(at),
+    ];
+    if (echo === 'limpo') echo = 'fraco';
+  }
+  if (!loose && echo === 'torto' && off.length !== 1) echo = 'sem_eco';
+  if (!loose && echo === 'fraco' && pieces.some((m) => m.cost > 0.6))
     echo = off.length === 1 ? 'torto' : 'sem_eco';
   if (echo === 'sem_eco')
     return {
@@ -135,7 +174,7 @@ export function interpret(alts: Alt[], lex: Lexicon, o: InterpretOptions): Cast 
       cost: best.cost,
       why: 'Saiu borrado demais: fale cada pedaço mais claro.',
     };
-  let morphs = best.morphs;
+  let morphs = morphsIn;
   if (echo === 'torto') {
     // o som mais torto escorrega pra outro morfema da mesma classe: sai outra magia
     morphs = morphs.map((m) => ({ ...m }));

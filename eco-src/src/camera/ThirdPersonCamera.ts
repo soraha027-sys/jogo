@@ -12,6 +12,8 @@ export class ThirdPersonCamera {
   pitch = 0.2;
   /** Distância desejada no chão. */
   distance = 3.4;
+  /** Câmera por cima do ombro direito: a bruxa não tampa a mira nem a magia. */
+  shoulder = 0.6;
   private readonly pivot = new Vector3();
   private dist = 3.4;
   private roll = 0;
@@ -52,7 +54,11 @@ export class ThirdPersonCamera {
       this.pivot.y += (target.y + head - this.pivot.y) * k;
       this.pivot.z += (target.z - this.pivot.z) * k;
     }
-    const p = this.pivot;
+    // desloca o pivô pro lado (direita da câmera); some em voo, onde ela fica centralizada
+    const side = flying ? 0 : this.shoulder;
+    const p = this.pivot
+      .clone()
+      .add(new Vector3(Math.cos(this.yaw) * side, 0, -Math.sin(this.yaw) * side));
     const cp = Math.cos(this.pitch);
     const dx = Math.sin(this.yaw) * cp;
     const dy = Math.sin(this.pitch);

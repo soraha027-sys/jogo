@@ -1,5 +1,5 @@
 import { LINGUA, type Lingua } from './lingua';
-import { normalize, phon, soundDistance, toPhonemes } from './phonetics';
+import { normalize, phon, phonEnd, soundDistance, toPhonemes } from './phonetics';
 
 export type MorphKind = 'prefix' | 'root' | 'linker' | 'ending';
 export interface Morph {
@@ -36,6 +36,7 @@ export function buildLexicon(data: Lingua = LINGUA): Lexicon {
   const forms: Form[] = [];
   const add = (kind: MorphKind, id: string, alt: string[] | undefined, final: boolean): void => {
     const set = new Set([phon(normalize(id), final), ...(alt ?? [])]);
+    if (final) set.add(phonEnd(normalize(id)));
     for (const ph of set) forms.push({ kind, id, ph });
   };
   for (const [id, r] of Object.entries(data.roots)) add('root', id, r.alt, false);
@@ -58,6 +59,16 @@ const NEXT: Record<MorphKind, Record<number, number>> = {
 };
 // a 1ª palavra precisa de terminação: essência sem forma não é encantamento
 const ACCEPT = [3, 4, 6];
+/** Com margem: aceita a 1ª palavra sem terminação (quem chama completa). */
+const ACCEPT_LOOSE = [1, 3, 4, 6];
+
+export interface DecodeOptions {
+  /** Erro máximo por peça, como fração do tamanho dela. */
+  tolerance?: number;
+  /** Custo de uma vogal sobrando colada na peça. */
+  extraVowel?: number;
+  needEnding?: boolean;
+}
 const STATES = 7;
 const SKIP = 1;
 
@@ -74,7 +85,9 @@ interface Cell {
  * Busca a segmentação em morfemas de menor custo sonoro que obedece a gramática;
  * não importa em que "palavras" o Chrome quebrou a fala.
  */
-export function decode(text: string, lex: Lexicon): Decoded | null {
+export function decode(text: string, lex: Lexicon, opts: DecodeOptions = {}): Decoded | null {
+  const tol = opts.tolerance ?? 0.34;
+  const accept = opts.needEnding === false ? ACCEPT_LOOSE : ACCEPT;
   const ph = toPhonemes(text);
   const n = ph.length;
   if (n < 3 || n > 60) return null;
@@ -98,14 +111,15 @@ export function decode(text: string, lex: Lexicon): Decoded | null {
         if (ns === undefined) continue;
         const L = f.ph.length;
         for (let len = Math.max(1, L - 1); len <= L + 1 && i + len <= n; len++) {
-          const c = soundDistance(ph.slice(i, i + len), f.ph);
-          if (c > Math.max(0.6, L * 0.34)) continue;
+          const c = soundDistance(ph.slice(i, i + len), f.ph, opts.extraVowel ?? 1);
+          // peça curta (terminação, prefixo) não pode perder metade: no máximo um som parecido
+          if (c > (L <= 2 ? 0.6 : Math.max(0.6, L * tol))) continue;
           relax(i + len, ns, { cost: here.cost + c, from: i, state: s, form: f, step: c });
         }
       }
     }
   let end: Cell | null = null;
-  for (const s of ACCEPT) {
+  for (const s of accept) {
     const c = grid[n]?.[s];
     if (c && (!end || c.cost < end.cost)) end = c;
   }

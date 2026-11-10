@@ -1,5 +1,6 @@
 import {
   BoxGeometry,
+  IcosahedronGeometry,
   Color,
   CylinderGeometry,
   Float32BufferAttribute,
@@ -31,12 +32,36 @@ function tinted(geo: BufferGeometry, color: number): BufferGeometry {
 const WHITE = new Color(1, 1, 1);
 const WET = new Color(0.62, 0.72, 0.95);
 const COLD = new Color(0.8, 0.93, 1.1);
-const ICE = new MeshBasicMaterial({
-  color: 0xbfeaff,
+const ICE = new MeshToonMaterial({
+  color: 0xbfeeff,
+  gradientMap: toonRamp(),
   transparent: true,
-  opacity: 0.45,
+  opacity: 0.6,
+  emissive: 0x4aa8ff,
+  emissiveIntensity: 0.2,
   depthWrite: false,
 });
+const FROST = new MeshToonMaterial({
+  color: 0xe8f8ff,
+  gradientMap: toonRamp(),
+  emissive: 0x9fe2ff,
+  emissiveIntensity: 0.3,
+});
+
+/** Bloco de gelo facetado e irregular (não uma caixa). */
+function iceBlock(): BufferGeometry {
+  const g = new IcosahedronGeometry(1, 1).toNonIndexed();
+  const p = g.getAttribute('position');
+  const seen = new Map<string, number>();
+  for (let i = 0; i < p.count; i++) {
+    const key = `${p.getX(i).toFixed(3)},${p.getY(i).toFixed(3)},${p.getZ(i).toFixed(3)}`;
+    const k = seen.get(key) ?? 0.85 + Math.random() * 0.3;
+    seen.set(key, k);
+    p.setXYZ(i, p.getX(i) * 0.62 * k, p.getY(i) * 1.1 * k + 1, p.getZ(i) * 0.62 * k);
+  }
+  g.computeVertexNormals();
+  return g;
+}
 const HALF = 21;
 
 /**
@@ -52,6 +77,8 @@ export class Dummy {
   private readonly body: Mesh;
   private readonly mat: MeshToonMaterial;
   private readonly ice: Mesh;
+  /** Cristais de geada que crescem a cada acúmulo de frio. */
+  private readonly frost: Mesh[] = [];
   private readonly stars = new Group();
   private readonly bar = new Group();
   private readonly fill: Mesh;
@@ -87,9 +114,24 @@ export class Dummy {
     this.mat = new MeshToonMaterial({ vertexColors: true, gradientMap: toonRamp() });
     this.body = new Mesh(geo ?? new BoxGeometry(), this.mat);
     this.body.castShadow = true;
-    this.ice = new Mesh(new BoxGeometry(1.25, 2.1, 1.25), ICE);
-    this.ice.position.y = 1;
+    this.ice = new Mesh(iceBlock(), ICE);
     this.ice.visible = false;
+    const spike = new OctahedronGeometry(0.5, 0).scale(0.18, 0.6, 0.18);
+    const spots: [number, number, number, number][] = [
+      [0.28, 1.0, 0.12, -0.6],
+      [-0.26, 1.2, -0.1, 0.7],
+      [0.05, 1.85, 0.2, 0.2],
+      [-0.5, 1.15, 0.05, 1.2],
+      [0.5, 1.15, -0.05, -1.2],
+      [0.1, 0.55, 0.28, -0.3],
+    ];
+    for (const [x, y, z, rz] of spots) {
+      const f = new Mesh(spike, FROST);
+      f.position.set(x, y, z);
+      f.rotation.set(z * 2, 0, rz);
+      f.visible = false;
+      this.frost.push(f);
+    }
     for (let i = 0; i < 3; i++) {
       const s = new Mesh(
         new OctahedronGeometry(0.07, 0),
@@ -118,6 +160,7 @@ export class Dummy {
     this.bar.add(bg, this.fill);
     this.bar.position.y = 2.3;
     this.bar.visible = false;
+    this.body.add(...this.frost);
     this.root.add(this.body, this.ice, this.stars, this.bar);
     this.root.position.set(x, 0, z);
     this.pos = this.root.position;
@@ -206,6 +249,11 @@ export class Dummy {
     this.flashT = Math.max(0, this.flashT - dt * 3);
     this.mat.emissive.copy(this.flashColor).multiplyScalar(this.flashT * 0.8);
     this.ice.visible = s.frozen > 0;
+    const frost = s.frozen > 0 ? 0 : Math.ceil(s.chill * 2);
+    this.frost.forEach((f, i) => {
+      f.visible = i < frost;
+      f.scale.setScalar(f.visible ? Math.min(1, f.scale.x + dt * 6) : 0.01);
+    });
     this.stars.visible = s.stunned > 0 && s.frozen <= 0;
     this.stars.rotation.y += dt * 6;
 

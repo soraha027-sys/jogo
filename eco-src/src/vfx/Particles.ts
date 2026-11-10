@@ -1,5 +1,5 @@
 import { Color, InstancedMesh, Matrix4, MeshBasicMaterial, Quaternion, Vector3 } from 'three';
-import type { BufferGeometry } from 'three';
+import type { BufferGeometry, Material } from 'three';
 
 /** Comportamento físico de uma partícula (os elementos do JSON têm esse formato). */
 export interface Kin {
@@ -35,6 +35,7 @@ const axis = new Vector3();
 const pos = new Vector3();
 const scl = new Vector3();
 const ZERO = new Matrix4().makeScale(0, 0, 0);
+const UP = new Vector3(0, 1, 0);
 
 /** Pool de partículas geométricas: 1 draw call, cor por instância, física simples na CPU. */
 export class ParticlePool {
@@ -43,8 +44,14 @@ export class ParticlePool {
   private cursor = 0;
   private alive = 0;
 
-  constructor(geo: BufferGeometry, capacity: number) {
-    this.mesh = new InstancedMesh(geo, new MeshBasicMaterial({ toneMapped: false }), capacity);
+  /** `align`: aponta a peça pra onde ela vai (cristais), em vez de girar à toa (pedras). */
+  constructor(
+    geo: BufferGeometry,
+    capacity: number,
+    material: Material = new MeshBasicMaterial({ toneMapped: false }),
+    private readonly align = false,
+  ) {
+    this.mesh = new InstancedMesh(geo, material, capacity);
     this.mesh.frustumCulled = false;
     const k: Kin = { gravity: 0, drag: 0, swirl: 0, bounce: 0, pull: 0, stretch: 1 };
     this.items = Array.from({ length: capacity }, () => ({
@@ -145,8 +152,13 @@ export class ParticlePool {
       }
       const age = p.max - p.life;
       const s = p.size * Math.min(1, age * 14, (p.life / p.max) * 2.5);
-      axis.set(Math.sin(i), Math.cos(i * 1.7), Math.sin(i * 2.3)).normalize();
-      q.setFromAxisAngle(axis, age * p.spin + i);
+      if (this.align && p.vx * p.vx + p.vy * p.vy + p.vz * p.vz > 0.5) {
+        axis.set(p.vx, p.vy, p.vz).normalize();
+        q.setFromUnitVectors(UP, axis);
+      } else {
+        axis.set(Math.sin(i), Math.cos(i * 1.7), Math.sin(i * 2.3)).normalize();
+        q.setFromAxisAngle(axis, age * p.spin + i);
+      }
       this.mesh.setMatrixAt(i, m.compose(pos.set(p.x, p.y, p.z), q, scl.set(s, s * k.stretch, s)));
     }
     this.mesh.instanceMatrix.needsUpdate = true;

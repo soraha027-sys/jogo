@@ -13,7 +13,7 @@ Cenário: pós-apocalíptico (ainda não existe; hoje é uma arena cinza de test
 - spells/ `data/lingua.json` (TODA a língua) · `phonetics.ts` · `decode.ts` (fala em pt → morfemas da língua) ·
   `essence.ts` (essência, tensão, plano, matéria) · `impact.ts` (o que a magia faz) · `status.ts` (estados/reações) · `Zones.ts` · `interpret.ts` (alternativas → Cast) · `SpellSystem.ts` (formas = emissores) · `Grimoire.ts`
 - voice/ `SpeechInput.ts` (Web Speech + viés `phrases`) · `Voice.ts` (liga/desliga, volume só no PC, boca)
-- vfx/ `Particles.ts`, `Dust.ts` · world/ `Arena.ts`, `Dummies.ts` · physics/ `aabb.ts` (provisória) · quality/ · art/ · ui/ · debug/
+- vfx/ `Sprites.ts` (sprites com shader) · `Elements.ts` (visual por raiz) · `Forms.ts` (funil, anel, coluna, cabeças) · `Particles.ts` · `Dust.ts` · world/ `Arena.ts`, `Dummies.ts` · physics/ `aabb.ts` (provisória) · quality/ · art/ · ui/ · debug/
 - net/ `transport.ts` (Trystero/Nostr ou BroadcastChannel) · `protocol.ts` (snapshot, magia, anfitrião) · `interp.ts` · `Net.ts` · `RemotePlayer.ts`
 - Ainda não existem: audio/, save/
 

@@ -109,6 +109,25 @@ describe('só encantamento vira magia', () => {
   });
 });
 
+describe('segurando o botão tem margem', () => {
+  const hold = (t: string): Extract<Cast, { kind: 'spell' }> | null => {
+    const c = interpret([{ text: t, confidence: 0.9 }], lex, { rng: () => 0, lenient: true });
+    return c?.kind === 'spell' ? c : null;
+  };
+  it('raiz sozinha vira projétil fraco', () => {
+    expect(hold('gelo')).toMatchObject({ echo: 'fraco' });
+    expect(hold('gelo')?.plan?.text).toBe('gelor');
+  });
+  it('vogal sobrando e palavra partida não derrubam', () => {
+    expect(hold('vento gelo')?.echo).toBe('fraco');
+    expect(hold('mag é lor')?.plan?.text).toBe('magelor');
+  });
+  it('conversa continua de fora', () => {
+    expect(hold('abacaxi com banana')?.echo).toBe('sem_eco');
+    expect(hold('bom dia')?.echo).toBe('sem_eco');
+  });
+});
+
 describe('eco da pronúncia', () => {
   it('limpo, fraco, torto, sem força', () => {
     expect(cast('ventus').echo).toBe('limpo');

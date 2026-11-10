@@ -157,5 +157,16 @@
     "pushSpeed": 8,
     "pullSpeed": 7,
     "liftSpeed": 7
+  },
+  "echoHold": {
+    "clean": 0.1,
+    "weak": 0.22,
+    "bent": 0.32
+  },
+  "rulesHold": {
+    "minMorphs": 2,
+    "maxSkips": 2,
+    "tolerance": 0.5,
+    "defaultEnding": "or"
   }
 }

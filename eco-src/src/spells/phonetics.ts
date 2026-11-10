@@ -10,12 +10,19 @@ export function normalize(text: string): string {
     .trim();
 }
 
-/**
- * Forma fonética aproximada de como um brasileiro lê a palavra
- * (qu/c→k, ge→j, ch→x, o/e finais→u/i...). `final=false` pula as regras de fim de palavra.
- */
-export function phon(word: string, final = true): string {
-  let w = word
+/** Regras de fim de palavra (o/e finais → u/i, l → u, m → n). Só em palavra de verdade: "é" solto continua "e". */
+function finals(w: string, force = false): string {
+  if (w.length <= 2 && !force) return w;
+  return w
+    .replace(/o(s?)$/, 'u$1')
+    .replace(/e(s?)$/, 'i$1')
+    .replace(/l$/, 'u')
+    .replace(/m$/, 'n');
+}
+
+/** Regras de consoante (qu/c→k, ge→j, ch→x...), aplicadas depois de juntar as palavras. */
+function sounds(w: string): string {
+  return w
     .replace(/qu(?=[ei])/g, 'k')
     .replace(/gu(?=[ei])/g, 'G')
     .replace(/ch|sh/g, 'x')
@@ -29,22 +36,29 @@ export function phon(word: string, final = true): string {
     .replace(/h/g, '')
     .replace(/z/g, 's')
     .replace(/y/g, 'i')
-    .replace(/w/g, 'u');
-  if (final)
-    w = w
-      .replace(/o(s?)$/, 'u$1')
-      .replace(/e(s?)$/, 'i$1')
-      .replace(/l$/, 'u')
-      .replace(/m$/, 'n');
-  return w.replace(/(.)\1+/g, '$1');
+    .replace(/w/g, 'u')
+    .replace(/(.)\1+/g, '$1');
 }
 
-/** Fala inteira → sequência de fonemas sem espaços (o decodificador ignora onde o Chrome cortou as palavras). */
+/**
+ * Forma fonética aproximada de como um brasileiro lê a palavra
+ * (qu/c→k, ge→j, ch→x, o/e finais→u/i...). `final=false` pula as regras de fim de palavra.
+ */
+export function phon(word: string, final = true): string {
+  return sounds(final ? finals(word) : word);
+}
+
+/** Como uma terminação soa no FIM de uma palavra ("um" → "un"), mesmo sendo curta. */
+export function phonEnd(ending: string): string {
+  return sounds(finals(ending, true));
+}
+
+/**
+ * Fala inteira → sequência de fonemas sem espaços. As consoantes são lidas DEPOIS de juntar,
+ * então "mag é lor" soa igual a "magelor" (o g antes do e vira j).
+ */
 export function toPhonemes(text: string): string {
-  return normalize(text)
-    .split(' ')
-    .map((w) => phon(w))
-    .join('');
+  return sounds(normalize(text).split(' ').map((w) => finals(w)).join(''));
 }
 
 const VOWELS = 'aeiou';
@@ -77,8 +91,11 @@ export function subCost(a: string, b: string): number {
   return va && vb ? 0.8 : va !== vb ? 1.2 : 1;
 }
 
-/** Distância de edição ponderada entre o que foi ouvido e uma forma da língua. */
-export function soundDistance(heard: string, form: string): number {
+/**
+ * Distância de edição ponderada entre o que foi ouvido e uma forma da língua.
+ * `extraVowel`: custo de uma vogal a mais no que foi ouvido (o português põe vogal no fim: gel → gelo).
+ */
+export function soundDistance(heard: string, form: string, extraVowel = 1): number {
   let prev = Array.from({ length: form.length + 1 }, (_, j) => j);
   for (let i = 1; i <= heard.length; i++) {
     const cur = [i];
@@ -86,7 +103,7 @@ export function soundDistance(heard: string, form: string): number {
     for (let j = 1; j <= form.length; j++) {
       cur[j] = Math.min(
         (prev[j - 1] ?? 0) + subCost(h, form[j - 1] ?? ''),
-        (prev[j] ?? 0) + 1,
+        (prev[j] ?? 0) + (VOWELS.includes(h) ? extraVowel : 1),
         (cur[j - 1] ?? 0) + 1,
       );
     }

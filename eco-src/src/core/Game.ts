@@ -73,6 +73,7 @@ export async function createGame(
   const view = query.get('view');
   if (view) {
     rig.distance = Number(query.get('dist') ?? 2.2);
+    rig.shoulder = 0;
     rig.pitch = 0.04;
     rig.yaw = { front: Math.PI, side: Math.PI / 2, q: Math.PI * 0.8 }[view] ?? 0;
   }
@@ -169,10 +170,12 @@ export async function createGame(
       power = 0.25;
     } else spells.mana -= plan.cost;
 
+    // ?view=side: mira de lado pra câmera de inspeção ver a magia atravessando a tela
+    const aimYaw = rig.yaw + (query.get('view') === 'side' ? Math.PI / 2 : 0);
     const aim = new Vector3(
-      -Math.sin(rig.yaw),
+      -Math.sin(aimYaw),
       player.flying ? -Math.sin(rig.pitch) : 0.03,
-      -Math.cos(rig.yaw),
+      -Math.cos(aimYaw),
     );
     player.face(Math.atan2(aim.x, aim.z));
     const unstable = plan.state === 'instavel';
@@ -211,7 +214,7 @@ export async function createGame(
     });
   };
   const say = (alts: Alt[], weak: boolean, strict = false): void => {
-    const cast = interpret(alts, lexicon, { rng: Math.random, weak, strict });
+    const cast = interpret(alts, lexicon, { rng: Math.random, weak, strict, lenient: !strict });
     if (cast) onCast(cast);
   };
   /** Fala parcial: já mostra na língua do jogo, nunca o português que o Chrome achou que ouviu. */

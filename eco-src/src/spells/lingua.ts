@@ -31,6 +31,9 @@ export interface Lingua {
    * no máximo `maxSkips` sons sobrando. (Microfone aberto ainda ignora `comuns.json`.)
    */
   rules: { minMorphs: number; shortEndings: string[]; maxSkips: number };
+  /** Segurando o botão é intenção de magia: limites mais largos (a margem). */
+  echoHold: { clean: number; weak: number; bent: number };
+  rulesHold: { minMorphs: number; maxSkips: number; tolerance: number; defaultEnding: string };
   commands: Record<string, string[]>;
   /** Pares que `la-` troca e que se anulam quando misturados sem `ko-`. */
   opposites: Record<string, string>;
