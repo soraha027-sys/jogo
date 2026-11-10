@@ -645,3 +645,53 @@ body {
   color: #e6c2ff;
   -webkit-text-stroke-color: #34106a;
 }
+
+#hud .top .adm-btn {
+  width: 50px;
+  padding: 0;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: #ffd98a;
+}
+.adm .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 0 0 6px;
+}
+#hud .adm .chip {
+  width: auto;
+  height: auto;
+  min-height: 30px;
+  padding: 3px 11px;
+  border-radius: 14px;
+  background: #fff;
+  border: 2px solid var(--c, #cdbfa6);
+  box-shadow: none;
+  margin: 0;
+  color: #2a1c42;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  pointer-events: auto;
+}
+#hud .adm .chip.on {
+  background: var(--c, #2a1c42);
+  border-color: var(--c, #2a1c42);
+  color: #fff;
+}
+.adm .adm-out {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #fff;
+}
+.adm .adm-out b {
+  display: block;
+  font-size: 18px;
+}
+.adm .adm-out span {
+  font-size: 12px;
+  opacity: 0.75;
+}

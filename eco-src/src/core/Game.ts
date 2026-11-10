@@ -9,13 +9,14 @@ import { TouchSource } from '../input/Touch';
 import { Player } from '../player/Player';
 import { Witch } from '../player/witch/Witch';
 import { QualityManager } from '../quality/Quality';
-import { buildLexicon, decode, spell } from '../spells/decode';
+import { buildLexicon, decode, spell, type Morph, type ParsedWord } from '../spells/decode';
 import { Grimoire } from '../spells/Grimoire';
 import { interpret, type Alt, type Cast } from '../spells/interpret';
 import { LINGUA } from '../spells/lingua';
 import { SpellSystem } from '../spells/SpellSystem';
 import { Hud } from '../ui/Hud';
 import { SpellHud, type CastView } from '../ui/SpellHud';
+import { AdminPanel } from '../ui/Admin';
 import { Dust } from '../vfx/Dust';
 import { Voice } from '../voice/Voice';
 import { createArena } from '../world/Arena';
@@ -247,6 +248,53 @@ export async function createGame(
     PRESETS,
   );
 
+  // ---------- ADM: pegar qualquer feitiço sem falar ----------
+  let infiniteMana = false;
+  const adminCast = (words: ParsedWord[]): Extract<Cast, { kind: 'spell' }> | null => {
+    const p = makePlan(words, data);
+    if (!p) return null;
+    const morphs: Morph[] = words.flatMap((w) => [
+      ...w.prefixes.map((id) => ({ kind: 'prefix' as const, id, cost: 0 })),
+      ...w.roots.map((id) => ({ kind: 'root' as const, id, cost: 0 })),
+      ...(w.ending ? [{ kind: 'ending' as const, id: w.ending, cost: 0 }] : []),
+    ]);
+    return {
+      kind: 'spell',
+      echo: 'limpo',
+      plan: p,
+      morphs,
+      heard: p.text,
+      phonemes: '',
+      cost: 0,
+      why: '',
+    };
+  };
+  new AdminPanel(hudRoot, data, {
+    preview: (words) => {
+      const p = makePlan(words, data);
+      return p ? { reading: p.reading, state: p.state } : null;
+    },
+    equip: (words) => {
+      const c = adminCast(words);
+      if (!c?.plan) return;
+      equipped = c;
+      touch.setEquipped(c.plan.text);
+      spellHud.showCast({
+        echo: 'limpo',
+        morphs: c.morphs,
+        reading: c.plan.reading,
+        state: c.plan.state,
+        why: 'Pegou. E / clique / ataque lançam.',
+        isNew: false,
+      });
+    },
+    cast: (words) => {
+      const c = adminCast(words);
+      if (c) onCast(c);
+    },
+    setInfinite: (on) => (infiniteMana = on),
+  });
+
   // ---------- multiplayer: abriu o link, está na sala ----------
   let net: Net | null = null;
   const remotes = new Map<string, RemotePlayer>();
@@ -378,6 +426,7 @@ export async function createGame(
       const now = performance.now() / 1000;
       for (const [id, r] of remotes) r.update(dt, now, net?.buffers.get(id));
       spells.update(dt);
+      if (infiniteMana) spells.mana = data.manaMax;
       dust.update(dt);
       zones.update(dt);
       player.surface = player.grounded ? zones.surface(player.pos.x, player.pos.z) : null;

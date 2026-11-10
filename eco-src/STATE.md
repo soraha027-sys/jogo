@@ -18,7 +18,7 @@ Cenário: pós-apocalíptico (ainda não existe; hoje é uma arena cinza de test
 - Ainda não existem: audio/, save/
 
 ## Feito
-- M0 base · bruxa v2 + árvore de animação (andar/correr por velocidade, tronco aditivo, molas físicas) · botão de atacar · multiplayer: todo mundo do link na mesma sala · microfone segurar-pra-falar + filtro de fala comum · poderes com efeito (estados, reações, zonas, pilares sólidos, bonecos com vida) · língua do Eco + decodificador + motor de essências (v1 da mecânica de magia) · VFX estilizado
+- M0 base · bruxa v2 + árvore de animação (andar/correr por velocidade, tronco aditivo, molas físicas) · botão de atacar · multiplayer: todo mundo do link na mesma sala · microfone segurar-pra-falar + filtro de fala comum · poderes com efeito (estados, reações, zonas, pilares sólidos, bonecos com vida) · língua do Eco + decodificador + motor de essências (v1 da mecânica de magia) · VFX estilizado · painel ADM
 
 ## Próximo
 - Calibrar o decodificador com fala real (o overlay de debug mostra o que o Chrome ouviu, os fonemas e o custo)
