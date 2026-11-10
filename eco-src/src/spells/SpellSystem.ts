@@ -1,9 +1,10 @@
 import { Color, CylinderGeometry, Group, Mesh, MeshToonMaterial, Vector3 } from 'three';
-import type { Scene } from 'three';
+import type { Camera, Scene } from 'three';
 import { toonRamp } from '../art/toon';
 import { box, rayAabb, type Aabb } from '../physics/aabb';
 import { ElementFx, type Motion } from '../vfx/Elements';
-import { column, funnel, head, iceCluster, ring, stream, type FormFx } from '../vfx/Forms';
+import { column, head, iceCluster, type FormFx } from '../vfx/Forms';
+import { StyleFx } from '../vfx/Style';
 import { materialize, type Matter, type SpellPlan, type WordPlan } from './essence';
 import { emptyImpact, impactOf, scaleImpact, type Impact } from './impact';
 import type { Lingua } from './lingua';
@@ -93,6 +94,9 @@ function stylesOf(p: SpellPlan, d: Lingua): [string, number][] {
 export class SpellSystem {
   mana: number;
   readonly fx: ElementFx;
+  readonly style: StyleFx;
+  /** Câmera (as faixas estilizadas viram pra ela). */
+  camera: Camera | null = null;
   private active: Active[] = [];
   private readonly forms: FormFx[] = [];
   private readonly pillars: Pillar[] = [];
@@ -108,6 +112,7 @@ export class SpellSystem {
   ) {
     this.mana = data.manaMax;
     this.fx = new ElementFx(scene);
+    this.style = new StyleFx(scene);
   }
 
   update(dt: number): void {
@@ -123,6 +128,7 @@ export class SpellSystem {
     this.statusFx(dt);
     this.updatePillars(dt);
     this.fx.update(dt);
+    if (this.camera) this.style.update(dt, this.camera);
   }
 
   private track(f: FormFx): FormFx {
@@ -344,6 +350,25 @@ export class SpellSystem {
     }
   }
 
+  /** Onomatopeia de quadrinho no impacto, uma por elemento. */
+  private sfx(root: string, at: Vector3): void {
+    const words: Record<string, string[]> = {
+      pir: ['FUSH!', 'FWOOM!'],
+      vent: ['VUUSH!', 'FSSH!'],
+      gel: ['KRISH!', 'TSING!'],
+      lav: ['CHOF!', 'SPLASH!'],
+      ter: ['KRAK!', 'BUM!'],
+      kor: ['VUMP!', 'ZMM!'],
+    };
+    const list = words[root] ?? ['PÁ!'];
+    this.hooks.popup(
+      list[Math.floor(Math.random() * list.length)] ?? 'PÁ!',
+      at.clone().setY(at.y + 1.2),
+      `sfx sfx-${root}`,
+      true,
+    );
+  }
+
   private reaction(r: Reaction, t: Target): void {
     const at = t.pos.clone().setY(t.pos.y + 1.2);
     this.hooks.popup(r.toUpperCase(), at.clone().setY(at.y + 1.4), REACTION_KIND[r], true);
@@ -456,6 +481,8 @@ export class SpellSystem {
       const a = (i / 16) * Math.PI * 2;
       this.fx.spark(origin.x, origin.y, origin.z, Math.cos(a) * 3, 1.5 + rnd(), Math.sin(a) * 3);
     }
+    this.style.slash(lead, origin, dir, Math.min(1.6, plan.scale));
+    this.style.groundStrokes(center, dir);
     for (let e = 0; e < plan.echoes; e++) {
       const scale = plan.scale * power * plan.power * ([1, 0.7, 0.5][e] ?? 0.4);
       const echoImp = scaleImpact(imp, [1, 0.6, 0.4][e] ?? 0.3);
@@ -539,7 +566,13 @@ export class SpellSystem {
     // o que é pesado sai mais pra cima (arco), pra não cair no pé de quem lançou
     if (!c.sky) vel.y += c.m.arc * 0.35;
     const side = new Vector3().crossVectors(dir, UP).normalize();
-    const h = this.track(head(this.scene, c.lead, Math.max(0.5, c.scale)) ?? stubFx());
+    // gelo e pedra têm corpo (lança, pedregulho); o resto é orbe com borda acesa
+    const solidHead = c.lead === 'gel' || c.lead === 'ter' || c.lead === 'vent';
+    const h = this.track(
+      (solidHead ? head(this.scene, c.lead, Math.max(0.5, c.scale)) : null) ?? stubFx(),
+    );
+    const orb = solidHead ? null : this.style.orb(c.lead, Math.max(0.6, c.scale));
+    const trail = this.style.trail(c.lead, Math.max(0.6, c.scale));
     let t = 0;
     let dist = 0;
     let acc = 0;
@@ -569,6 +602,8 @@ export class SpellSystem {
       dist += step;
       h.object.position.copy(pos);
       h.object.quaternion.setFromUnitVectors(new Vector3(0, 0, 1), v.copy(vel).normalize());
+      orb?.at(pos);
+      trail.at(pos, vel);
       this.fx.core(c.lead, pos.x, pos.y, pos.z, Math.max(0.6, c.scale));
       const s = c.m.spiral * 0.4 * c.scale;
       for (acc += dt * 130; acc >= 1; acc--)
@@ -588,7 +623,11 @@ export class SpellSystem {
         );
       if (!hit) return true;
       this.drop(h);
+      orb?.end();
+      trail.end();
       pos.y = Math.max(pos.y, 0.15);
+      this.style.shock(c.lead, pos, Math.max(0.7, c.scale));
+      this.sfx(c.lead, pos);
       this.burstCfg(c, pos, Math.round(40 * c.scale * c.m.burst), 5 + 3 * c.scale, 1.1);
       this.fx.impact(c.lead, pos.x, pos.y, pos.z, c.scale);
       const hitSet = new Set<Target>();
@@ -614,8 +653,8 @@ export class SpellSystem {
     const H = 3.4 * c.scale;
     const R = 1.7 * c.scale;
     const drift = 1.2 + Math.max(0, c.m.speed - 10) * 0.12;
-    const shell = this.track(funnel(this.scene, c.lead, H, R));
-    if (c.sky) shell.object.rotation.x = Math.PI;
+    const center = new Vector3(p.x, c.sky ? 9 : 0.05, p.z);
+    this.style.helix(c.lead, center, H, R, 4.2 * c.dur, c.sky);
     let t = 0;
     let acc = 0;
     let tick = 0.2;
@@ -625,8 +664,7 @@ export class SpellSystem {
       t += dt;
       p.addScaledVector(dir, drift * dt);
       if (c.jitter) p.x += Math.sin(t * 5) * 2.5 * dt;
-      shell.object.position.set(p.x, c.sky ? 9 : 0, p.z);
-      shell.setOpacity(Math.min(1, t * 4, (life - t) * 2) * 0.6);
+      center.set(p.x, c.sky ? 9 : 0.05, p.z);
       for (acc += dt * 160 * Math.min(2, c.scale); acc >= 1; acc--) {
         const hh = Math.random() ** 1.4 * H;
         const r = (0.3 + hh * 0.4) * (0.8 + Math.random() * 0.3);
@@ -664,9 +702,7 @@ export class SpellSystem {
         this.ground(c, p.x, p.z, R * 0.7, false);
         c.sub?.(p.clone().setY(1));
       }
-      if (t < life) return true;
-      this.drop(shell);
-      return false;
+      return t < life;
     };
   }
 
@@ -677,13 +713,11 @@ export class SpellSystem {
     const max = 8 * Math.sqrt(c.scale);
     const hit = new Set<Target>();
     const cw: Cfg = { ...c, imp: { ...c.imp, push: Math.max(c.imp.push, 0.5) } };
-    const band = this.track(ring(this.scene, c.lead));
-    band.object.position.set(p.x, c.sky ? 6 : 0.15, p.z);
+    this.style.wave(c.lead, p.clone(), max, 0.9, c.sky ? 6 : 0.1);
+    this.style.shock(c.lead, p.clone().setY(1), Math.max(0.7, c.scale));
     return (dt) => {
       t += dt / 0.9;
       const r = 0.6 + t * max;
-      band.object.scale.setScalar(r);
-      band.setOpacity(Math.max(0, 1 - t) * 0.9);
       for (acc += dt * 300 * Math.min(2, c.scale); acc >= 1; acc--) {
         const a = Math.random() * Math.PI * 2;
         this.body(
@@ -709,7 +743,6 @@ export class SpellSystem {
         }
       }
       if (t < 1) return true;
-      this.drop(band);
       this.ground(c, p.x, p.z, max * 0.55, true);
       for (let i = 0; i < 3; i++) {
         const a = Math.random() * Math.PI * 2;
@@ -740,6 +773,33 @@ export class SpellSystem {
     if (col) col.object.position.set(p.x, c.sky ? 11 - H : 0, p.z);
     if (solid) this.raisePillar(c, p, r);
     const life = solid ? 0.5 : 1.4 * c.dur;
+    this.style.shock(c.lead, p.clone().setY(0.8), Math.max(0.7, c.scale));
+    if (!solid)
+      this.style.helix(c.lead, p.clone().setY(c.sky ? 11 : 0.05), H, r * 1.4, life, c.sky);
+    // água em pilar vira prisão: bolha em volta de quem estava perto, que fica preso e encharcado
+    if (!solid && c.imp.wet > 0.6 && c.imp.burn < 0.3)
+      for (const tg of this.targets) {
+        if (!tg.alive || Math.hypot(tg.pos.x - p.x, tg.pos.z - p.z) > r + 1.8) continue;
+        const hold = 2.6 * c.dur;
+        tg.status.stunned = Math.max(tg.status.stunned, hold);
+        tg.status.wet = Math.max(tg.status.wet, hold + 3);
+        tg.status.burning = 0;
+        this.hooks.popup('PRESO', tg.pos.clone().setY(tg.pos.y + 2.8), 'wet', true);
+        this.style.bubble(tg.pos, 1, hold, () => {
+          for (let i = 0; i < 40; i++)
+            this.fx.emit(
+              'lav',
+              tg.pos.x,
+              tg.pos.y + 1.1,
+              tg.pos.z,
+              rnd() * 4,
+              Math.random() * 4,
+              rnd() * 4,
+              1.2,
+            );
+          this.sfx('lav', tg.pos.clone().setY(tg.pos.y + 0.6));
+        });
+      }
     return (dt) => {
       t += dt;
       if (col) {
@@ -861,9 +921,7 @@ export class SpellSystem {
     const reach = Math.min(c.sky ? 12 : 11, speed * 0.55) * Math.sqrt(c.scale);
     const end = from.clone().addScaledVector(d, reach);
     end.y = Math.max(0.1, end.y);
-    const cone = this.track(
-      stream(this.scene, c.lead, from, end, 0.35 * Math.sqrt(c.scale) + 0.15),
-    );
+    this.style.beam(c.lead, from, end, 0.55 * Math.sqrt(c.scale) + 0.2, 1.5 * c.dur);
     if (c.self && c.imp.push > 0.3 && !c.sky)
       this.hooks.recoil(
         dir
@@ -874,7 +932,6 @@ export class SpellSystem {
     const life = 1.5 * c.dur;
     return (dt) => {
       t += dt;
-      cone.setOpacity(Math.min(1, t * 8, (life - t) * 4) * 0.7);
       for (acc += dt * 180; acc >= 1; acc--) {
         const k = 0.75 + Math.random() * 0.5;
         this.body(
@@ -908,7 +965,6 @@ export class SpellSystem {
         }
       }
       if (t < life) return true;
-      this.drop(cone);
       this.ground(c, end.x, end.z, 1.2 * c.scale, true);
       c.sub?.(end);
       return false;

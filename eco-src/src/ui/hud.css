@@ -614,3 +614,34 @@ body {
 .pop.steam {
   color: #ffffff;
 }
+
+.pop.sfx {
+  font:
+    italic 900 30px/1 'Arial Black',
+    Impact,
+    system-ui,
+    sans-serif;
+  letter-spacing: 0.02em;
+  -webkit-text-stroke: 5px #1a1226;
+  rotate: -8deg;
+}
+.pop.sfx-pir {
+  color: #ffcf4a;
+}
+.pop.sfx-vent {
+  color: #eafff6;
+}
+.pop.sfx-gel {
+  color: #c8f2ff;
+}
+.pop.sfx-lav {
+  color: #ffffff;
+  -webkit-text-stroke-color: #1b4fd0;
+}
+.pop.sfx-ter {
+  color: #f0d8a8;
+}
+.pop.sfx-kor {
+  color: #e6c2ff;
+  -webkit-text-stroke-color: #34106a;
+}

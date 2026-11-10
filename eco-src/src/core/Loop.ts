@@ -13,6 +13,8 @@ export class FixedLoop {
   private acc = 0;
   private last = -1;
   private raf = 0;
+  /** Câmera lenta (inspeção: `?lento=0.2`). */
+  timeScale = 1;
 
   constructor(
     private readonly h: LoopHandlers,
@@ -24,7 +26,7 @@ export class FixedLoop {
 
   tick(nowMs: number): number {
     if (this.last < 0) this.last = nowMs;
-    const dt = Math.min(0.25, Math.max(0, (nowMs - this.last) / 1000));
+    const dt = Math.min(0.25, Math.max(0, (nowMs - this.last) / 1000)) * this.timeScale;
     this.last = nowMs;
     this.h.begin(dt);
     this.acc += dt;

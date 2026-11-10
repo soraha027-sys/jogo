@@ -103,6 +103,7 @@ export async function createGame(
     drain: (amount) => (spells.mana = Math.min(data.manaMax, spells.mana + amount)),
     recoil: (v) => player.impulse(v),
   });
+  spells.camera = rig.camera;
   const pending: { at: number; run: () => void }[] = [];
   let time = 0;
   let diag = '';
@@ -405,5 +406,6 @@ export async function createGame(
     },
   });
 
+  loop.timeScale = Number(query.get('lento') ?? 1) || 1;
   return { start: () => loop.start() };
 }

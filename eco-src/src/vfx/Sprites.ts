@@ -130,10 +130,11 @@ const FRAG = /* glsl */ `
     vec3 col = vColor.rgb;
     int s = int(vShape + 0.5);
     if (s == 0) a = exp(-d * d * 3.2);                                   // névoa macia
-    else if (s == 1) {                                                   // língua de fogo
+    else if (s == 1) {                                                   // língua de fogo, borda dura em 3 tons
       vec2 q = vec2(p.x * (1.0 + max(0.0, p.y) * 1.4), p.y * 0.85 + 0.15);
-      a = smoothstep(1.0, 0.15, length(q));
-      col = mix(col, vec3(1.0, 0.97, 0.8), smoothstep(0.55, 0.0, length(q + vec2(0.0, 0.25))) * 0.8);
+      float l = length(q);
+      a = smoothstep(1.0, 0.94, l);
+      col = l < 0.42 ? vec3(1.0, 0.96, 0.78) : (l < 0.74 ? col : col * vec3(0.95, 0.45, 0.3));
     }
     else if (s == 2) a = exp(-p.x * p.x * 9.0) * smoothstep(1.0, 0.2, abs(p.y)); // risco de vento
     else if (s == 3) {                                                   // brilho de 4 pontas
